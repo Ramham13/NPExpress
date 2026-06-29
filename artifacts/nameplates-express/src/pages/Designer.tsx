@@ -1,25 +1,26 @@
 import { useState, useMemo } from "react";
-import { ChevronRight, RotateCcw } from "lucide-react";
+import { ChevronRight, RotateCcw, Bold, Italic } from "lucide-react";
 import {
   TAG_SIZES,
   TEMPLATES,
   FONT_OPTIONS,
   FONT_SIZE_OPTIONS,
+  defaultZoneConfig,
   type TagSize,
   type Template,
+  type ZoneConfigs,
+  type ZoneConfig,
 } from "@/data/templates";
 
 type Step = 1 | 2 | 3;
+
+// ─── Root ────────────────────────────────────────────────────────────────────
 
 export default function Designer() {
   const [step, setStep] = useState<Step>(1);
   const [selectedSize, setSelectedSize] = useState<TagSize | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
-  const [textValues, setTextValues] = useState<Record<string, string>>({});
-  const [fontId, setFontId] = useState("arial");
-  const [fontSize, setFontSize] = useState(14);
-
-  const selectedFont = FONT_OPTIONS.find((f) => f.id === fontId) ?? FONT_OPTIONS[0];
+  const [zoneConfigs, setZoneConfigs] = useState<ZoneConfigs>({});
 
   const compatibleTemplates = useMemo(
     () =>
@@ -32,25 +33,32 @@ export default function Designer() {
   function pickSize(size: TagSize) {
     setSelectedSize(size);
     setSelectedTemplate(null);
-    setTextValues({});
+    setZoneConfigs({});
     setStep(2);
   }
 
   function pickTemplate(template: Template) {
     setSelectedTemplate(template);
-    const defaults: Record<string, string> = {};
-    template.zones.forEach((z) => (defaults[z.id] = ""));
-    setTextValues(defaults);
+    const configs: ZoneConfigs = {};
+    template.zones.forEach((z) => {
+      configs[z.id] = defaultZoneConfig();
+    });
+    setZoneConfigs(configs);
     setStep(3);
+  }
+
+  function updateZone(zoneId: string, patch: Partial<ZoneConfig>) {
+    setZoneConfigs((prev) => ({
+      ...prev,
+      [zoneId]: { ...prev[zoneId], ...patch },
+    }));
   }
 
   function reset() {
     setStep(1);
     setSelectedSize(null);
     setSelectedTemplate(null);
-    setTextValues({});
-    setFontId("arial");
-    setFontSize(14);
+    setZoneConfigs({});
   }
 
   return (
@@ -82,11 +90,24 @@ export default function Designer() {
       {/* Breadcrumb stepper */}
       <div className="border-b border-border bg-muted/50">
         <div className="mx-auto max-w-5xl px-4 py-3 flex items-center gap-2 text-xs">
-          <StepCrumb num={1} label="Select Size" active={step === 1} done={step > 1} onClick={step > 1 ? () => { setStep(1); setSelectedTemplate(null); } : undefined} />
+          <StepCrumb
+            num={1} label="Select Size"
+            active={step === 1} done={step > 1}
+            onClick={step > 1 ? () => { setStep(1); setSelectedTemplate(null); } : undefined}
+          />
           <ChevronRight size={12} className="text-muted-foreground flex-shrink-0" />
-          <StepCrumb num={2} label="Choose Template" active={step === 2} done={step > 2} onClick={step > 2 ? () => { setStep(2); setSelectedTemplate(null); } : undefined} disabled={step < 2} />
+          <StepCrumb
+            num={2} label="Choose Template"
+            active={step === 2} done={step > 2}
+            onClick={step > 2 ? () => { setStep(2); setSelectedTemplate(null); } : undefined}
+            disabled={step < 2}
+          />
           <ChevronRight size={12} className="text-muted-foreground flex-shrink-0" />
-          <StepCrumb num={3} label="Enter Text & Preview" active={step === 3} done={false} disabled={step < 3} />
+          <StepCrumb
+            num={3} label="Enter Text & Preview"
+            active={step === 3} done={false}
+            disabled={step < 3}
+          />
         </div>
       </div>
 
@@ -104,36 +125,27 @@ export default function Designer() {
           <TextStep
             size={selectedSize}
             template={selectedTemplate}
-            textValues={textValues}
-            setTextValues={setTextValues}
-            fontId={fontId}
-            setFontId={setFontId}
-            fontSize={fontSize}
-            setFontSize={setFontSize}
-            fontFamily={selectedFont.family}
+            zoneConfigs={zoneConfigs}
+            onUpdateZone={updateZone}
             onBack={() => setStep(2)}
           />
         )}
       </main>
 
       <footer className="border-t border-border py-4 text-center text-xs text-muted-foreground">
-        Nameplates Express &bull; Anodized Aluminum &bull; Black
+        Nameplates Express &bull; Anodized Aluminum &bull; Black &bull; Landscape
       </footer>
     </div>
   );
 }
 
-// ─── Step breadcrumb ────────────────────────────────────────────────────────
+// ─── Breadcrumb step ─────────────────────────────────────────────────────────
 
 function StepCrumb({
   num, label, active, done, disabled, onClick,
 }: {
-  num: number;
-  label: string;
-  active: boolean;
-  done: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
+  num: number; label: string; active: boolean; done: boolean;
+  disabled?: boolean; onClick?: () => void;
 }) {
   return (
     <button
@@ -143,42 +155,40 @@ function StepCrumb({
         disabled ? "opacity-40 cursor-default" : onClick ? "cursor-pointer" : "cursor-default"
       }`}
     >
-      <span
-        className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 ${
-          active
-            ? "bg-primary text-white"
-            : done
-            ? "bg-primary/20 text-primary"
-            : "bg-muted text-muted-foreground"
-        }`}
-      >
+      <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0 ${
+        active ? "bg-primary text-white" : done ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+      }`}>
         {num}
       </span>
-      <span
-        className={`font-medium ${
-          active ? "text-foreground" : done ? "text-primary" : "text-muted-foreground"
-        }`}
-      >
+      <span className={`font-medium ${active ? "text-foreground" : done ? "text-primary" : "text-muted-foreground"}`}>
         {label}
       </span>
     </button>
   );
 }
 
-// ─── Step 1: Size picker ─────────────────────────────────────────────────────
+// ─── Step 1: Size picker ──────────────────────────────────────────────────────
 
 function SizeStep({ onPick }: { onPick: (s: TagSize) => void }) {
+  // Thumbnail dimensions — landscape: wider than tall
+  const THUMB_W = 96;
+  const THUMB_H_MAX = 52;
+
   return (
     <div>
       <h1 className="mb-1 text-xl font-black text-foreground">Select Tag Size</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        Choose the dimensions for your anodized aluminum nameplate.
+        All tags are landscape orientation (wider than tall). Choose your dimensions.
       </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {TAG_SIZES.map((size) => {
+          // aspect = height/width; landscape means aspect < 1
           const aspect = size.height / size.width;
-          const previewH = Math.min(72, 36 * aspect);
-          const previewW = previewH / aspect;
+          const thumbW = THUMB_W;
+          const thumbH = Math.max(16, Math.round(thumbW * aspect));
+          const cappedH = Math.min(thumbH, THUMB_H_MAX);
+          const cappedW = Math.round(cappedH / aspect);
+
           return (
             <button
               key={size.id}
@@ -186,22 +196,18 @@ function SizeStep({ onPick }: { onPick: (s: TagSize) => void }) {
               onClick={() => onPick(size)}
               className="group flex flex-col items-center gap-3 rounded border border-border bg-card p-5 text-center transition-all hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              {/* Mini plate visual */}
               <div
-                className="rounded-sm"
+                className="rounded-sm flex-shrink-0"
                 style={{
-                  width: previewW,
-                  height: previewH,
+                  width: cappedW,
+                  height: cappedH,
                   background: "linear-gradient(145deg, hsl(220 20% 18%), hsl(220 15% 10%))",
                   border: "2px solid hsl(220 20% 30%)",
-                  flexShrink: 0,
                 }}
               />
-              <div>
-                <p className="font-mono text-sm font-bold text-foreground group-hover:text-primary transition-colors">
-                  {size.label}
-                </p>
-              </div>
+              <p className="font-mono text-sm font-bold text-foreground group-hover:text-primary transition-colors">
+                {size.label}
+              </p>
             </button>
           );
         })}
@@ -213,15 +219,10 @@ function SizeStep({ onPick }: { onPick: (s: TagSize) => void }) {
 // ─── Step 2: Template picker ──────────────────────────────────────────────────
 
 function TemplateStep({
-  size,
-  templates,
-  onPick,
-  onBack,
+  size, templates, onPick, onBack,
 }: {
-  size: TagSize;
-  templates: Template[];
-  onPick: (t: Template) => void;
-  onBack: () => void;
+  size: TagSize; templates: Template[];
+  onPick: (t: Template) => void; onBack: () => void;
 }) {
   return (
     <div>
@@ -236,7 +237,7 @@ function TemplateStep({
         <div>
           <h1 className="text-xl font-black text-foreground">Choose a Layout Template</h1>
           <p className="text-sm text-muted-foreground">
-            Showing templates available for <span className="font-semibold text-foreground">{size.label}</span>
+            Templates available for <span className="font-semibold text-foreground">{size.label}</span> (landscape)
           </p>
         </div>
       </div>
@@ -248,7 +249,6 @@ function TemplateStep({
             onClick={() => onPick(t)}
             className="group flex flex-col items-start gap-3 rounded border border-border bg-card p-5 text-left transition-all hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            {/* Mini template preview */}
             <MiniPlatePreview size={size} template={t} />
             <div>
               <p className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">
@@ -263,41 +263,35 @@ function TemplateStep({
   );
 }
 
+// Landscape mini preview (SVG)
 function MiniPlatePreview({ size, template }: { size: TagSize; template: Template }) {
-  const aspect = size.height / size.width;
-  const W = 160;
-  const H = Math.min(120, W * aspect);
-  const actualW = H / aspect;
+  const aspect = size.height / size.width; // < 1 for landscape
+  const W = 200;
+  const H = Math.max(28, Math.round(W * aspect));
 
   return (
-    <svg
-      width={actualW}
-      height={H}
-      style={{ display: "block", borderRadius: 3, overflow: "hidden" }}
-    >
-      {/* Plate body */}
+    <svg width={W} height={H} style={{ display: "block", borderRadius: 3 }}>
       <defs>
-        <linearGradient id={`grad-mini-${template.id}`} x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={`mg-${template.id}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="hsl(220, 20%, 18%)" />
           <stop offset="100%" stopColor="hsl(220, 15%, 10%)" />
         </linearGradient>
       </defs>
-      <rect width={actualW} height={H} fill={`url(#grad-mini-${template.id})`} rx={3} />
-      <rect width={actualW} height={H} fill="none" stroke="hsl(220, 20%, 30%)" strokeWidth={1.5} rx={3} />
-
+      <rect width={W} height={H} rx={3} fill={`url(#mg-${template.id})`} />
+      <rect width={W} height={H} rx={3} fill="none" stroke="hsl(220, 20%, 30%)" strokeWidth={1.5} />
       {template.zones.map((zone) => {
-        const x = (zone.xPct / 100) * actualW;
+        const x = (zone.xPct / 100) * W;
         const y = (zone.yPct / 100) * H;
-        const w = (zone.widthPct / 100) * actualW;
+        const w = (zone.widthPct / 100) * W;
         const h = (zone.heightPct / 100) * H;
         return (
           <rect
             key={zone.id}
             x={x} y={y} width={w} height={h}
             fill="hsl(215, 25%, 22%)"
-            stroke="hsl(215, 25%, 35%)"
+            stroke="hsl(215, 25%, 38%)"
             strokeWidth={0.75}
-            strokeDasharray="2,2"
+            strokeDasharray="3,2"
             rx={1.5}
           />
         );
@@ -306,35 +300,17 @@ function MiniPlatePreview({ size, template }: { size: TagSize; template: Templat
   );
 }
 
-// ─── Step 3: Text editor + live preview ───────────────────────────────────────
+// ─── Step 3: Per-field text + live preview ────────────────────────────────────
 
 function TextStep({
-  size,
-  template,
-  textValues,
-  setTextValues,
-  fontId,
-  setFontId,
-  fontSize,
-  setFontSize,
-  fontFamily,
-  onBack,
+  size, template, zoneConfigs, onUpdateZone, onBack,
 }: {
   size: TagSize;
   template: Template;
-  textValues: Record<string, string>;
-  setTextValues: (v: Record<string, string>) => void;
-  fontId: string;
-  setFontId: (id: string) => void;
-  fontSize: number;
-  setFontSize: (n: number) => void;
-  fontFamily: string;
+  zoneConfigs: ZoneConfigs;
+  onUpdateZone: (id: string, patch: Partial<ZoneConfig>) => void;
   onBack: () => void;
 }) {
-  function setZoneText(zoneId: string, value: string) {
-    setTextValues({ ...textValues, [zoneId]: value });
-  }
-
   return (
     <div>
       <div className="mb-5 flex items-center gap-3">
@@ -346,126 +322,146 @@ function TextStep({
           ← Back
         </button>
         <div>
-          <h1 className="text-xl font-black text-foreground">Enter Your Text</h1>
+          <h1 className="text-xl font-black text-foreground">Enter Text & Style</h1>
           <p className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">{template.name}</span> &bull; {size.label}
+            <span className="font-semibold text-foreground">{template.name}</span>
+            {" "}&bull; {size.label} &bull; Landscape
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        {/* LEFT: controls */}
-        <div className="space-y-5">
-          {/* Text zones */}
-          {template.zones.map((zone) => (
-            <div key={zone.id}>
-              <label
-                htmlFor={`zone-${zone.id}`}
-                className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+        {/* LEFT: per-zone editors */}
+        <div className="space-y-4">
+          {template.zones.map((zone, idx) => {
+            const cfg = zoneConfigs[zone.id] ?? defaultZoneConfig();
+            const font = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
+            return (
+              <div
+                key={zone.id}
+                className="rounded border border-border bg-card overflow-hidden"
               >
-                {zone.label}
-              </label>
-              {zone.placeholder.includes("\n") ? (
-                <textarea
-                  id={`zone-${zone.id}`}
-                  data-testid={`input-zone-${zone.id}`}
-                  rows={3}
-                  value={textValues[zone.id] ?? ""}
-                  onChange={(e) => setZoneText(zone.id, e.target.value)}
-                  placeholder={zone.placeholder}
-                  className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-                />
-              ) : (
-                <input
-                  id={`zone-${zone.id}`}
-                  data-testid={`input-zone-${zone.id}`}
-                  type="text"
-                  value={textValues[zone.id] ?? ""}
-                  onChange={(e) => setZoneText(zone.id, e.target.value)}
-                  placeholder={zone.placeholder}
-                  className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              )}
-            </div>
-          ))}
+                {/* Zone header */}
+                <div className="border-b border-border bg-muted/50 px-4 py-2 flex items-center gap-2">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary flex-shrink-0">
+                    {idx + 1}
+                  </span>
+                  <span className="text-xs font-semibold text-foreground">{zone.label}</span>
+                </div>
 
-          <div className="border-t border-border pt-5">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Text Options
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              {/* Font */}
-              <div>
-                <label
-                  htmlFor="font-select"
-                  className="mb-1.5 block text-xs text-muted-foreground"
-                >
-                  Font
-                </label>
-                <div className="relative">
-                  <select
-                    id="font-select"
-                    data-testid="select-font"
-                    value={fontId}
-                    onChange={(e) => setFontId(e.target.value)}
-                    className="w-full appearance-none rounded border border-border bg-card px-3 py-2 pr-7 text-sm text-foreground focus:border-primary focus:outline-none"
-                    style={{ fontFamily }}
-                  >
-                    {FONT_OPTIONS.map((f) => (
-                      <option key={f.id} value={f.id} style={{ fontFamily: f.family }}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </select>
-                  <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+                <div className="p-4 space-y-3">
+                  {/* Text input */}
+                  {zone.multiline ? (
+                    <textarea
+                      data-testid={`input-zone-${zone.id}`}
+                      rows={3}
+                      value={cfg.text}
+                      onChange={(e) => onUpdateZone(zone.id, { text: e.target.value })}
+                      placeholder={zone.placeholder}
+                      className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                      style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }}
+                    />
+                  ) : (
+                    <input
+                      data-testid={`input-zone-${zone.id}`}
+                      type="text"
+                      value={cfg.text}
+                      onChange={(e) => onUpdateZone(zone.id, { text: e.target.value })}
+                      placeholder={zone.placeholder}
+                      className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }}
+                    />
+                  )}
+
+                  {/* Font controls row */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Font family */}
+                    <div className="relative flex-1 min-w-[140px]">
+                      <select
+                        data-testid={`select-font-${zone.id}`}
+                        value={cfg.fontId}
+                        onChange={(e) => onUpdateZone(zone.id, { fontId: e.target.value })}
+                        className="w-full appearance-none rounded border border-border bg-background px-2.5 py-1.5 pr-7 text-xs text-foreground focus:border-primary focus:outline-none"
+                        style={{ fontFamily: font.family }}
+                      >
+                        {FONT_OPTIONS.map((f) => (
+                          <option key={f.id} value={f.id} style={{ fontFamily: f.family }}>
+                            {f.label}
+                          </option>
+                        ))}
+                      </select>
+                      <svg className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" width="10" height="10" viewBox="0 0 12 12">
+                        <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                      </svg>
+                    </div>
+
+                    {/* Font size */}
+                    <div className="relative w-[80px]">
+                      <select
+                        data-testid={`select-fontsize-${zone.id}`}
+                        value={cfg.fontSize}
+                        onChange={(e) => onUpdateZone(zone.id, { fontSize: Number(e.target.value) })}
+                        className="w-full appearance-none rounded border border-border bg-background px-2.5 py-1.5 pr-7 text-xs text-foreground focus:border-primary focus:outline-none"
+                      >
+                        {FONT_SIZE_OPTIONS.map((s) => (
+                          <option key={s} value={s}>{s}pt</option>
+                        ))}
+                      </select>
+                      <svg className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" width="10" height="10" viewBox="0 0 12 12">
+                        <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                      </svg>
+                    </div>
+
+                    {/* Bold toggle */}
+                    <button
+                      data-testid={`button-bold-${zone.id}`}
+                      onClick={() => onUpdateZone(zone.id, { bold: !cfg.bold })}
+                      aria-pressed={cfg.bold}
+                      title="Bold"
+                      className={`flex h-7 w-7 items-center justify-center rounded border text-xs transition-all ${
+                        cfg.bold
+                          ? "border-primary bg-primary text-white"
+                          : "border-border bg-background text-foreground hover:border-primary"
+                      }`}
+                    >
+                      <Bold size={13} />
+                    </button>
+
+                    {/* Italic toggle */}
+                    <button
+                      data-testid={`button-italic-${zone.id}`}
+                      onClick={() => onUpdateZone(zone.id, { italic: !cfg.italic })}
+                      aria-pressed={cfg.italic}
+                      title="Italic"
+                      className={`flex h-7 w-7 items-center justify-center rounded border text-xs transition-all ${
+                        cfg.italic
+                          ? "border-primary bg-primary text-white"
+                          : "border-border bg-background text-foreground hover:border-primary"
+                      }`}
+                    >
+                      <Italic size={13} />
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              {/* Font size */}
-              <div>
-                <label
-                  htmlFor="fontsize-select"
-                  className="mb-1.5 block text-xs text-muted-foreground"
-                >
-                  Font Size
-                </label>
-                <div className="relative">
-                  <select
-                    id="fontsize-select"
-                    data-testid="select-fontsize"
-                    value={fontSize}
-                    onChange={(e) => setFontSize(Number(e.target.value))}
-                    className="w-full appearance-none rounded border border-border bg-card px-3 py-2 pr-7 text-sm text-foreground focus:border-primary focus:outline-none"
-                  >
-                    {FONT_SIZE_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}pt
-                      </option>
-                    ))}
-                  </select>
-                  <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
-                </div>
-              </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
         {/* RIGHT: live preview */}
-        <div>
+        <div className="lg:sticky lg:top-6 lg:self-start">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Live Preview
           </p>
-          <div className="flex items-start justify-center rounded border border-border bg-[hsl(220_20%_8%)] p-6">
+          <div className="flex items-center justify-center rounded border border-border bg-[hsl(220_20%_8%)] p-6">
             <PlatePreview
               size={size}
               template={template}
-              textValues={textValues}
-              fontFamily={fontFamily}
-              fontSize={fontSize}
+              zoneConfigs={zoneConfigs}
             />
           </div>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground font-mono">
-            {size.label} · Black Anodized Aluminum · Not to scale
+          <p className="mt-2 text-center font-mono text-[11px] text-muted-foreground">
+            {size.label} &bull; Landscape &bull; Black Anodized Aluminum &bull; Not to scale
           </p>
         </div>
       </div>
@@ -473,33 +469,24 @@ function TextStep({
   );
 }
 
-// ─── SVG Plate Preview ────────────────────────────────────────────────────────
+// ─── SVG plate preview ────────────────────────────────────────────────────────
 
 function PlatePreview({
-  size,
-  template,
-  textValues,
-  fontFamily,
-  fontSize,
+  size, template, zoneConfigs,
 }: {
   size: TagSize;
   template: Template;
-  textValues: Record<string, string>;
-  fontFamily: string;
-  fontSize: number;
+  zoneConfigs: ZoneConfigs;
 }) {
-  // Scale to a fixed max display width
-  const maxW = 380;
-  const maxH = 300;
-  const aspect = size.height / size.width;
-  let W = maxW;
+  // Landscape plate: width > height, so aspect = height/width < 1
+  const MAX_W = 420;
+  const MAX_H = 260;
+  const aspect = size.height / size.width; // < 1
+  let W = MAX_W;
   let H = W * aspect;
-  if (H > maxH) {
-    H = maxH;
-    W = H / aspect;
-  }
+  if (H > MAX_H) { H = MAX_H; W = H / aspect; }
 
-  const PAD = 10; // inner padding px
+  const PAD = 8;
 
   return (
     <svg
@@ -509,72 +496,74 @@ function PlatePreview({
       style={{ display: "block", maxWidth: "100%" }}
     >
       <defs>
-        <linearGradient id="plate-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="hsl(220, 18%, 19%)" />
-          <stop offset="60%" stopColor="hsl(220, 15%, 11%)" />
+        <linearGradient id="plate-bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stopColor="hsl(220, 18%, 19%)" />
+          <stop offset="55%"  stopColor="hsl(220, 15%, 11%)" />
           <stop offset="100%" stopColor="hsl(220, 18%, 16%)" />
         </linearGradient>
-        {/* Highlight overlay */}
         <linearGradient id="plate-shine" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
+          <stop offset="0%"  stopColor="rgba(255,255,255,0.07)" />
           <stop offset="40%" stopColor="rgba(255,255,255,0)" />
         </linearGradient>
-        <clipPath id="plate-clip">
-          <rect x={0} y={0} width={W} height={H} rx={4} />
-        </clipPath>
       </defs>
 
       {/* Plate body */}
-      <rect x={0} y={0} width={W} height={H} rx={4} fill="url(#plate-grad)" />
-      {/* Shine */}
-      <rect x={0} y={0} width={W} height={H} rx={4} fill="url(#plate-shine)" clipPath="url(#plate-clip)" />
-      {/* Border */}
-      <rect x={0.75} y={0.75} width={W - 1.5} height={H - 1.5} rx={3.5} fill="none" stroke="hsl(220, 20%, 32%)" strokeWidth={1.5} />
-      {/* Inner shadow line */}
-      <rect x={2.5} y={2.5} width={W - 5} height={H - 5} rx={2.5} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
+      <rect x={0} y={0} width={W} height={H} rx={4} fill="url(#plate-bg)" />
+      <rect x={0} y={0} width={W} height={H} rx={4} fill="url(#plate-shine)" />
+      {/* Outer border */}
+      <rect x={1} y={1} width={W - 2} height={H - 2} rx={3.5} fill="none" stroke="hsl(220, 20%, 34%)" strokeWidth={1.5} />
+      {/* Inner highlight */}
+      <rect x={3} y={3} width={W - 6} height={H - 6} rx={2.5} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
 
       {template.zones.map((zone) => {
-        const x = PAD + (zone.xPct / 100) * (W - PAD * 2);
-        const y = PAD + (zone.yPct / 100) * (H - PAD * 2);
-        const w = (zone.widthPct / 100) * (W - PAD * 2);
-        const h = (zone.heightPct / 100) * (H - PAD * 2);
-        const displayText = textValues[zone.id] || zone.placeholder;
-        const isPlaceholder = !textValues[zone.id];
-        const textX = zone.align === "center" ? x + w / 2 : x + 6;
+        const cfg = zoneConfigs[zone.id] ?? defaultZoneConfig();
+        const font = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
 
-        // Clamp font size so it fits zone height
-        const maxFontForZone = Math.max(8, Math.min(fontSize, h * 0.6));
+        const innerW = W - PAD * 2;
+        const innerH = H - PAD * 2;
+        const x = PAD + (zone.xPct / 100) * innerW;
+        const y = PAD + (zone.yPct / 100) * innerH;
+        const zw = (zone.widthPct / 100) * innerW;
+        const zh = (zone.heightPct / 100) * innerH;
+
+        const displayText = cfg.text || zone.placeholder;
+        const isPlaceholder = !cfg.text;
+        const lines = displayText.split("\n");
+
+        // Clamp font to fit zone height
+        const clampedSize = Math.max(6, Math.min(cfg.fontSize, zh * 0.55));
+
+        const textX = zone.align === "center" ? x + zw / 2 : x + 5;
+        const lineH = clampedSize * 1.25;
+        const totalTextH = lines.length * lineH;
+        const textStartY = y + zh / 2 - totalTextH / 2 + clampedSize * 0.85;
 
         return (
           <g key={zone.id}>
             <rect
-              x={x} y={y} width={w} height={h}
+              x={x} y={y} width={zw} height={zh}
               fill="hsl(215, 22%, 16%)"
-              stroke="hsl(215, 22%, 32%)"
+              stroke={isPlaceholder ? "hsl(215, 22%, 32%)" : "hsl(215, 22%, 40%)"}
               strokeWidth={0.75}
               strokeDasharray={isPlaceholder ? "3,2" : "0"}
               rx={2}
             />
-            {/* Render each line of text */}
-            {displayText.split("\n").map((line, i, arr) => {
-              const lineH = maxFontForZone * 1.3;
-              const totalH = arr.length * lineH;
-              const startY = y + h / 2 - totalH / 2 + lineH * 0.75;
-              return (
-                <text
-                  key={i}
-                  x={textX}
-                  y={startY + i * lineH}
-                  textAnchor={zone.align === "center" ? "middle" : "start"}
-                  fontFamily={fontFamily}
-                  fontSize={maxFontForZone}
-                  fill={isPlaceholder ? "hsl(215, 16%, 42%)" : "hsl(210, 60%, 88%)"}
-                  style={{ userSelect: "none" }}
-                >
-                  {line}
-                </text>
-              );
-            })}
+            {lines.map((line, i) => (
+              <text
+                key={i}
+                x={textX}
+                y={textStartY + i * lineH}
+                textAnchor={zone.align === "center" ? "middle" : "start"}
+                fontFamily={font.family}
+                fontSize={clampedSize}
+                fontWeight={cfg.bold ? 700 : 400}
+                fontStyle={cfg.italic ? "italic" : "normal"}
+                fill={isPlaceholder ? "hsl(215, 14%, 42%)" : "hsl(210, 55%, 88%)"}
+                style={{ userSelect: "none" }}
+              >
+                {line}
+              </text>
+            ))}
           </g>
         );
       })}
