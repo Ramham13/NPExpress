@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Nameplates Express"
+version = "1.0.0"
+id = "artifacts/nameplates-express"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24487
+
+[services.development]
+run = "pnpm --filter @workspace/nameplates-express run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nameplates-express", "run", "build" ]
+publicDir = "artifacts/nameplates-express/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24487"
+BASE_PATH = "/"
