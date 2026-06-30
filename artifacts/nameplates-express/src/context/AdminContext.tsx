@@ -65,7 +65,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   // Guards so effects only fire at the right time
   const initializedFromApi = useRef(false);
-  const skipNextSave = useRef(false); // true when sizes are set from API (not by admin action)
+  const skipNextSizesSave = useRef(false); // true when sizes are set from API (not by admin action)
+  const skipNextWorkflowSave = useRef(false); // true when workflow settings are set from API
   const isFirstRender = useRef(true);
 
   const queryClient = useQueryClient();
@@ -85,7 +86,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     if (apiConfig.configured) {
       // Row exists in DB — adopt whatever the server returned (even empty array)
       const serverSizes = apiConfig.sizes as AdminSize[];
-      skipNextSave.current = true;
+      skipNextSizesSave.current = true;
+      skipNextWorkflowSave.current = true;
       setSizes(serverSizes);
       setWorkflowSettings((apiConfig as { workflowSettings?: Record<string, unknown> }).workflowSettings ?? {});
       saveAdminSizes(serverSizes);
@@ -105,8 +107,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!initializedFromApi.current) return;
-    if (skipNextSave.current) {
-      skipNextSave.current = false;
+    if (skipNextSizesSave.current) {
+      skipNextSizesSave.current = false;
       return;
     }
     saveAdminSizes(sizes);
@@ -116,7 +118,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isFirstRender.current) return;
     if (!initializedFromApi.current) return;
-    if (skipNextSave.current) return;
+    if (skipNextWorkflowSave.current) {
+      skipNextWorkflowSave.current = false;
+      return;
+    }
     persistConfig(sizes, workflowSettings);
   }, [workflowSettings]);
 

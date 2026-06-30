@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { allowedTransitions, isTransitionAllowed } from "../../../../api-server/src/routes/orders";
 

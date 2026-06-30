@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { desc, eq } from "drizzle-orm";
 import crypto from "node:crypto";
-import { db, orderTable, orderDeliveryAttemptTable } from "@workspace/db";
+import { db, adminConfigTable, orderTable, orderDeliveryAttemptTable } from "@workspace/db";
 import { buildFinalOrderPayload, checksumPayload, makeOrderId } from "../lib/orders";
 
 const router: IRouter = Router();
@@ -14,8 +14,37 @@ function getN8nCallbackSecret() {
   return process.env.N8N_CALLBACK_SECRET ?? "";
 }
 
-function getWebhookToken(orderId: string) {
-  return crypto.createHmac("sha256", process.env.N8N_SHARED_SECRET ?? "local-n8n-secret").update(orderId).digest("hex");
+type WorkflowSettings = Record<string, unknown>;
+
+async function getWorkflowSettings(): Promise<WorkflowSettings> {
+  const rows = await db.select().from(adminConfigTable).limit(1);
+  return (rows[0]?.workflowSettings ?? {}) as WorkflowSettings;
+}
+
+function getConfiguredWebhookUrl(settings: WorkflowSettings) {
+  const configured = typeof settings.n8nOrdersWebhookUrl === "string" ? settings.n8nOrdersWebhookUrl.trim() : "";
+  return configured || getN8nWebhookUrl();
+}
+
+function isWebhookEnabled(settings: WorkflowSettings) {
+  if (typeof settings.webhookEnabled === "boolean") {
+    return settings.webhookEnabled;
+  }
+  return true;
+}
+
+function getSharedSecret(settings: WorkflowSettings) {
+  const configured = typeof settings.n8nCallbackSecret === "string" ? settings.n8nCallbackSecret.trim() : "";
+  return configured || (process.env.N8N_SHARED_SECRET ?? "local-n8n-secret");
+}
+
+function getCallbackSecret(settings: WorkflowSettings) {
+  const configured = typeof settings.n8nCallbackSecret === "string" ? settings.n8nCallbackSecret.trim() : "";
+  return configured || getN8nCallbackSecret();
+}
+
+function getWebhookToken(orderId: string, secret: string) {
+  return crypto.createHmac("sha256", secret).update(orderId).digest("hex");
 }
 
 function escapeXml(value: unknown) {
@@ -39,7 +68,9 @@ function renderProofSvg(orderId: string, payload: Record<string, unknown>) {
   ];
   const text = lines.map((line, index) => `<text x="48" y="${96 + index * 44}" font-size="28" fill="#10233d" font-family="Arial, Helvetica, sans-serif">${escapeXml(line)}</text>`).join("");
   const itemRows = cart.slice(0, 6).map((item, index) => {
-    const label = item.label ?? item.name ?? item.size?.label ?? `Line item ${index + 1}`;
+    const lineItem = item as Record<string, unknown>;
+    const size = lineItem.size as Record<string, unknown> | undefined;
+    const label = lineItem.label ?? lineItem.name ?? size?.label ?? `Line item ${index + 1}`;
     return `<text x="48" y="${360 + index * 34}" font-size="22" fill="#334155" font-family="Arial, Helvetica, sans-serif">${escapeXml(label)}</text>`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -57,7 +88,10 @@ function renderProofSvg(orderId: string, payload: Record<string, unknown>) {
 export const allowedTransitions: Record<string, string[]> = {
   draft: ["submitted", "invoiced"],
   submitted: ["approved", "paid", "ready", "shipped", "delivered", "n8n_confirmed"],
+  approved: ["paid", "ready", "shipped", "delivered"],
   paid: ["ready", "shipped", "delivered"],
+  ready: ["shipped", "delivered"],
+  shipped: ["delivered"],
   invoiced: ["submitted", "paid"],
   queued_for_n8n: ["n8n_sent", "n8n_failed", "n8n_confirmed"],
   n8n_sent: ["n8n_confirmed", "n8n_failed"],
@@ -92,10 +126,21 @@ router.post("/orders/finalize", async (req, res) => {
       paid: body.paymentStatus === "paid",
     });
     const payloadChecksum = checksumPayload(payload);
-    const n8nDeliveryToken = getWebhookToken(orderId);
-
+    const workflowSettings = await getWorkflowSettings();
     const existing = await db.select().from(orderTable).where(eq(orderTable.orderId, orderId)).limit(1);
-    const record = existing[0]
+    const existingOrder = existing[0];
+    if (existingOrder?.state === "n8n_confirmed") {
+      res.json({ orderId: existingOrder.orderId, state: existingOrder.state, queued: false, duplicate: true });
+      return;
+    }
+    if (existingOrder && existingOrder.payloadChecksum === payloadChecksum && ["queued_for_n8n", "n8n_sent"].includes(existingOrder.state)) {
+      res.status(202).json({ orderId: existingOrder.orderId, state: existingOrder.state, queued: existingOrder.state === "queued_for_n8n", duplicate: true });
+      return;
+    }
+
+    const n8nDeliveryToken = getWebhookToken(orderId, getSharedSecret(workflowSettings));
+
+    const record = existingOrder
       ? (await db.update(orderTable).set({
           state: payload.orderState,
           paymentMethod: body.paymentMethod,
@@ -112,7 +157,21 @@ router.post("/orders/finalize", async (req, res) => {
           n8nDeliveryToken,
         }).returning())[0];
 
-    const webhookUrl = getN8nWebhookUrl();
+    if (!isWebhookEnabled(workflowSettings)) {
+      await db.insert(orderDeliveryAttemptTable).values({
+        orderId: record.orderId,
+        requestChecksum: payloadChecksum,
+        requestPayload: payload,
+        requestStatus: "skipped",
+        responseStatus: "not_configured",
+        responseBody: { reason: "n8n webhook is not configured" },
+        confirmationState: "failed",
+      });
+      await db.update(orderTable).set({ state: "n8n_failed" }).where(eq(orderTable.orderId, record.orderId));
+      res.json({ orderId: record.orderId, state: "n8n_failed", queued: false });
+      return;
+    }
+    const webhookUrl = getConfiguredWebhookUrl(workflowSettings);
     if (!webhookUrl) {
       await db.insert(orderDeliveryAttemptTable).values({
         orderId: record.orderId,
@@ -128,7 +187,7 @@ router.post("/orders/finalize", async (req, res) => {
       return;
     }
 
-    await db.insert(orderDeliveryAttemptTable).values({
+    const attempt = (await db.insert(orderDeliveryAttemptTable).values({
       orderId: record.orderId,
       requestChecksum: payloadChecksum,
       requestPayload: payload,
@@ -136,7 +195,7 @@ router.post("/orders/finalize", async (req, res) => {
       responseStatus: "pending",
       responseBody: null,
       confirmationState: "awaiting",
-    });
+    }).returning())[0];
 
     await db.update(orderTable).set({ state: "queued_for_n8n" }).where(eq(orderTable.orderId, record.orderId));
 
@@ -151,12 +210,15 @@ router.post("/orders/finalize", async (req, res) => {
     });
     const text = await response.text();
     const latest = await db.select().from(orderTable).where(eq(orderTable.orderId, record.orderId)).limit(1);
-    if (latest[0]?.state !== "n8n_confirmed") {
+    if (response.ok && latest[0]?.state !== "n8n_confirmed") {
       await db.update(orderTable).set({ state: "n8n_sent" }).where(eq(orderTable.orderId, record.orderId));
+    }
+    if (!response.ok) {
+      await db.update(orderTable).set({ state: "n8n_failed" }).where(eq(orderTable.orderId, record.orderId));
     }
     await db.update(orderDeliveryAttemptTable)
       .set({ responseStatus: String(response.status), responseBody: { text }, confirmationState: response.ok ? "awaiting" : "failed" })
-      .where(eq(orderDeliveryAttemptTable.orderId, record.orderId));
+      .where(eq(orderDeliveryAttemptTable.id, attempt.id));
 
     res.status(response.ok ? 202 : 502).json({ orderId: record.orderId, state: response.ok ? "n8n_sent" : "n8n_failed" });
   } catch (err) {
@@ -204,12 +266,13 @@ router.post("/orders/:orderId/status", async (req, res) => {
     res.status(404).json({ error: "Order not found" });
     return;
   }
-  if (!isTransitionAllowed(order.state, state)) {
-    res.status(409).json({ error: `Transition from ${order.state} to ${state} is not allowed` });
+  const nextState = state as typeof order.state;
+  if (!isTransitionAllowed(order.state, nextState)) {
+    res.status(409).json({ error: `Transition from ${order.state} to ${nextState} is not allowed` });
     return;
   }
   await db.update(orderTable).set({
-    state,
+    state: nextState,
     payload: {
       ...(order.payload as Record<string, unknown>),
       trackingNumber: typeof trackingNumber === "string" ? trackingNumber : undefined,
@@ -219,7 +282,7 @@ router.post("/orders/:orderId/status", async (req, res) => {
       statusUpdatedAt: new Date().toISOString(),
     },
   }).where(eq(orderTable.orderId, orderId));
-  res.json({ ok: true, orderId, state });
+  res.json({ ok: true, orderId, state: nextState });
 });
 
 router.post("/orders/:orderId/retry", async (req, res) => {
@@ -230,7 +293,22 @@ router.post("/orders/:orderId/retry", async (req, res) => {
     res.status(404).json({ error: "Order not found" });
     return;
   }
-  const webhookUrl = getN8nWebhookUrl();
+  const workflowSettings = await getWorkflowSettings();
+  if (!isWebhookEnabled(workflowSettings)) {
+    await db.insert(orderDeliveryAttemptTable).values({
+      orderId: order.orderId,
+      requestChecksum: order.payloadChecksum,
+      requestPayload: order.payload,
+      requestStatus: "retry_skipped",
+      responseStatus: "not_configured",
+      responseBody: { reason: "n8n webhook is not enabled" },
+      confirmationState: "failed",
+    });
+    await db.update(orderTable).set({ state: "n8n_failed" }).where(eq(orderTable.orderId, orderId));
+    res.status(409).json({ error: "n8n webhook is not enabled" });
+    return;
+  }
+  const webhookUrl = getConfiguredWebhookUrl(workflowSettings);
   if (!webhookUrl) {
     await db.insert(orderDeliveryAttemptTable).values({
       orderId: order.orderId,
@@ -247,8 +325,7 @@ router.post("/orders/:orderId/retry", async (req, res) => {
   }
   const payload = order.payload as Record<string, unknown>;
   const payloadChecksum = checksumPayload(payload);
-  const n8nDeliveryToken = getWebhookToken(order.orderId);
-  await db.insert(orderDeliveryAttemptTable).values({
+  const attempt = (await db.insert(orderDeliveryAttemptTable).values({
     orderId: order.orderId,
     requestChecksum: payloadChecksum,
     requestPayload: payload,
@@ -256,14 +333,14 @@ router.post("/orders/:orderId/retry", async (req, res) => {
     responseStatus: "pending",
     responseBody: null,
     confirmationState: "awaiting",
-  });
+  }).returning())[0];
   await db.update(orderTable).set({ state: "queued_for_n8n" }).where(eq(orderTable.orderId, orderId));
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-order-id": order.orderId,
-      "x-order-token": n8nDeliveryToken,
+      "x-order-token": order.n8nDeliveryToken,
     },
     body: JSON.stringify(payload),
   });
@@ -271,7 +348,7 @@ router.post("/orders/:orderId/retry", async (req, res) => {
   const latest = await db.select().from(orderTable).where(eq(orderTable.orderId, orderId)).limit(1);
   await db.update(orderDeliveryAttemptTable)
     .set({ responseStatus: String(response.status), responseBody: { text }, confirmationState: response.ok ? "awaiting" : "failed" })
-    .where(eq(orderDeliveryAttemptTable.orderId, order.orderId));
+    .where(eq(orderDeliveryAttemptTable.id, attempt.id));
   if (response.ok && latest[0]?.state !== "n8n_confirmed") {
     await db.update(orderTable).set({ state: "n8n_sent" }).where(eq(orderTable.orderId, orderId));
   } else if (!response.ok) {
@@ -282,20 +359,20 @@ router.post("/orders/:orderId/retry", async (req, res) => {
 
 router.post("/webhooks/n8n/order-confirmed", async (req, res) => {
   const { orderId, token } = req.body as Record<string, unknown>;
-  const callbackSecret = getN8nCallbackSecret();
   if (typeof orderId !== "string" || typeof token !== "string") {
     res.status(400).json({ error: "Missing orderId or token" });
-    return;
-  }
-  const isValidToken = token === getWebhookToken(orderId) || (callbackSecret ? token === callbackSecret : false);
-  if (!isValidToken) {
-    res.status(401).json({ error: "Unauthorized" });
     return;
   }
   const rows = await db.select().from(orderTable).where(eq(orderTable.orderId, orderId)).limit(1);
   const order = rows[0];
   if (!order) {
     res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  const workflowSettings = await getWorkflowSettings();
+  const secrets = [order.n8nDeliveryToken, getWebhookToken(orderId, getSharedSecret(workflowSettings)), getCallbackSecret(workflowSettings)].filter(Boolean) as string[];
+  if (!secrets.some((secret) => token === secret)) {
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
   if (order.state === "n8n_confirmed") {

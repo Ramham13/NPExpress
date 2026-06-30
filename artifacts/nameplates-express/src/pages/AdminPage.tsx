@@ -272,6 +272,16 @@ function AdminPageInner() {
     sandboxPayPalSecret: String(workflowSettings.sandboxPayPalSecret ?? ""),
   });
 
+  useEffect(() => {
+    setWorkflowForm({
+      n8nOrdersWebhookUrl: String(workflowSettings.n8nOrdersWebhookUrl ?? ""),
+      n8nCallbackSecret: String(workflowSettings.n8nCallbackSecret ?? ""),
+      webhookEnabled: Boolean(workflowSettings.webhookEnabled ?? false),
+      sandboxPayPalClientId: String(workflowSettings.sandboxPayPalClientId ?? ""),
+      sandboxPayPalSecret: String(workflowSettings.sandboxPayPalSecret ?? ""),
+    });
+  }, [workflowSettings]);
+
   const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
 
   // ── Actions ───────────────────────────────────────────────────────────────

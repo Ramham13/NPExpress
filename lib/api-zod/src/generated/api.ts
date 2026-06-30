@@ -7,6 +7,31 @@
  */
 import * as zod from 'zod';
 
+const AdminPricingTier = zod.object({
+  "minQty": zod.number(),
+  "priceEach": zod.number()
+});
+
+const AdminColor = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "hex": zod.string(),
+  "enabled": zod.boolean()
+});
+
+const AdminSize = zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "width": zod.number(),
+  "height": zod.number(),
+  "description": zod.string(),
+  "active": zod.boolean(),
+  "sortOrder": zod.number(),
+  "basePrice": zod.number(),
+  "pricingTiers": zod.array(AdminPricingTier),
+  "colors": zod.array(AdminColor)
+});
+
 
 /**
  * Returns server health status
@@ -36,27 +61,8 @@ export const PostAdminUnlockResponse = zod.object({
  */
 export const GetAdminConfigResponse = zod.object({
   "configured": zod.boolean().describe('True when a config row exists in the database; false on first run'),
-  "sizes": zod.array(zod.object({
-  "id": zod.string(),
-  "label": zod.string(),
-  "width": zod.number(),
-  "height": zod.number(),
-  "description": zod.string(),
-  "active": zod.boolean(),
-  "sortOrder": zod.number(),
-  "basePrice": zod.number(),
-  "pricingTiers": zod.array(zod.object({
-  "minQty": zod.number(),
-  "priceEach": zod.number()
-})),
-  "colors": zod.array(zod.object({
-  "id": zod.string(),
-  "label": zod.string(),
-  "hex": zod.string(),
-  "enabled": zod.boolean()
-})),
+  "sizes": zod.array(AdminSize),
   "workflowSettings": zod.record(zod.string(), zod.any()).default({})
-}))
 })
 
 
@@ -65,52 +71,14 @@ export const GetAdminConfigResponse = zod.object({
  * @summary Save admin configuration
  */
 export const PutAdminConfigBody = zod.object({
-  "sizes": zod.array(zod.object({
-  "id": zod.string(),
-  "label": zod.string(),
-  "width": zod.number(),
-  "height": zod.number(),
-  "description": zod.string(),
-  "active": zod.boolean(),
-  "sortOrder": zod.number(),
-  "basePrice": zod.number(),
-  "pricingTiers": zod.array(zod.object({
-  "minQty": zod.number(),
-  "priceEach": zod.number()
-})),
-  "colors": zod.array(zod.object({
-  "id": zod.string(),
-  "label": zod.string(),
-  "hex": zod.string(),
-  "enabled": zod.boolean()
-})),
+  "sizes": zod.array(AdminSize),
   "workflowSettings": zod.record(zod.string(), zod.any()).default({})
-}))
 })
 
 export const PutAdminConfigResponse = zod.object({
   "configured": zod.boolean().describe('True when a config row exists in the database; false on first run'),
-  "sizes": zod.array(zod.object({
-  "id": zod.string(),
-  "label": zod.string(),
-  "width": zod.number(),
-  "height": zod.number(),
-  "description": zod.string(),
-  "active": zod.boolean(),
-  "sortOrder": zod.number(),
-  "basePrice": zod.number(),
-  "pricingTiers": zod.array(zod.object({
-  "minQty": zod.number(),
-  "priceEach": zod.number()
-})),
-  "colors": zod.array(zod.object({
-  "id": zod.string(),
-  "label": zod.string(),
-  "hex": zod.string(),
-  "enabled": zod.boolean()
-})),
+  "sizes": zod.array(AdminSize),
   "workflowSettings": zod.record(zod.string(), zod.any()).default({})
-}))
 })
 
 

@@ -25,7 +25,7 @@ A browser-based ordering platform for **custom anodized aluminum nameplates**. C
 
 ## Overview
 
-Nameplates Express is a **React + Vite ordering app** with a local Express API and PostgreSQL-backed admin config store for testing and development. Customer state still lives in the browser, but the admin dashboard now persists sizes and colors through the API so it behaves like a real shared environment. Orders are submitted either through the PayPal JavaScript SDK (sandbox mode) or as a "quote request" flow that produces a confirmation screen.
+Nameplates Express is a **React + Vite ordering app** with a local Express API and PostgreSQL-backed admin and order stores for testing and development. Customer design state still lives in the browser, but the admin dashboard now persists sizes, colors, and workflow settings through the API so it behaves like a real shared environment. Orders are submitted either through the PayPal JavaScript SDK (sandbox mode) or as a "quote request" flow that produces a confirmation screen and a local order record.
 
 The application is structured as a pnpm workspace artifact at `artifacts/nameplates-express/`.
 
@@ -47,9 +47,9 @@ That starts:
 
 The admin password for the local stack is stored in `docker/.env.local` and is currently set to `local-dev-password`.
 
-The admin page now also stores sandbox workflow settings in the database-backed admin config record. The local defaults are intentionally empty for the n8n URL and callback secret so you can supply your own sandbox values in the admin UI.
+The admin page now also stores sandbox workflow settings in the database-backed admin config record. The n8n URL and callback secret entered there are what the backend sender reads for live handoff behavior, with environment variables only acting as fallback defaults.
 
-The app now treats n8n as the downstream orchestration layer for order-intake email and invoice/receipt handling. The website still persists the canonical order first, then sends the finalized payload to n8n and waits for the confirmation callback.
+The app now treats n8n as the downstream orchestration layer for order-intake email and invoice/receipt handling. The website still persists the canonical order first, then sends the finalized payload to n8n and waits for the confirmation callback before it considers the handoff complete.
 
 ---
 
@@ -104,6 +104,11 @@ The order state model supports these states:
 - `approved`
 - `submitted`
 - `paid`
+- `invoiced`
+- `queued_for_n8n`
+- `n8n_sent`
+- `n8n_confirmed`
+- `n8n_failed`
 - `ready`
 - `shipped`
 - `delivered`
@@ -139,9 +144,9 @@ The outbound payload is JSON and includes:
 |---|---|
 | `ADMIN_PASSWORD` | Admin unlock password for the local stack |
 | `DATABASE_URL` | PostgreSQL connection string |
-| `N8N_ORDERS_WEBHOOK_URL` | Outbound webhook target for finalized orders |
-| `N8N_CALLBACK_SECRET` | Shared token for the n8n acknowledgement callback |
-| `N8N_SHARED_SECRET` | Shared HMAC secret for correlating order/webhook requests |
+| `N8N_ORDERS_WEBHOOK_URL` | Fallback outbound webhook target for finalized orders |
+| `N8N_CALLBACK_SECRET` | Fallback shared token for the n8n acknowledgement callback |
+| `N8N_SHARED_SECRET` | Fallback shared HMAC secret for correlating order/webhook requests |
 
 ### Manual test checklist
 
@@ -168,7 +173,7 @@ The outbound payload is JSON and includes:
 | **Text Measurement** | Offscreen `<canvas>` (`CanvasRenderingContext2D.measureText`) |
 | **Payments** | PayPal JS SDK (sandbox) via CDN script tag |
 | **State** | React `useState` / `useReducer` / `useContext` — no Redux/Zustand |
-| **Persistence** | `localStorage` (admin settings only) |
+| **Persistence** | PostgreSQL for admin config and order records |
 | **Build** | Vite (`pnpm --filter @workspace/nameplates-express run dev`) |
 | **Package Manager** | pnpm workspaces (monorepo) |
 | **Node** | ≥ 20 (Node 24 in CI) |
@@ -197,11 +202,11 @@ artifacts/nameplates-express/
 │   │   └── PlateFinalPreview.tsx  # High-fidelity SVG renderer (used in cart, CSV, confirmation)
 │   │
 │   ├── context/
-│   │   └── AdminContext.tsx       # React context wrapping admin localStorage store
+│   │   └── AdminContext.tsx       # React context wrapping admin API-backed store
 │   │
 │   ├── lib/
 │   │   ├── plate-utils.ts         # Core geometry, text layout, overflow detection
-│   │   └── admin-store.ts         # Admin settings schema + localStorage read/write
+│   │   └── admin-store.ts         # Admin settings defaults + browser cache helpers
 │   │
 │   └── data/
 │       └── templates.ts           # Font options, default templates, TagSize type, ZoneConfig type
@@ -218,7 +223,7 @@ artifacts/nameplates-express/
 | Concern | File |
 |---|---|
 | Database schema | N/A — no database |
-| Admin product data | `src/lib/admin-store.ts` (localStorage key `npx_admin_v1`) |
+| Admin product data | PostgreSQL admin config record, with a local browser cache for instant paint |
 | Plate geometry types | `src/lib/plate-utils.ts` (`TextZone`, `ZoneConfig`, `TagSize`) |
 | Font list | `src/data/templates.ts` (`FONT_OPTIONS`) |
 | Default plate templates | `src/data/templates.ts` (`TEMPLATES`) |
@@ -287,7 +292,7 @@ All routes are handled client-side by **wouter**. There is no server-side routin
 
 ### 1. Size Picker
 
-The first screen customers see. Plate sizes come from the admin localStorage store (`admin-store.ts`). Only sizes with `active: true` are shown, sorted by `sortOrder`.
+The first screen customers see. Plate sizes come from the admin API-backed store. Only sizes with `active: true` are shown, sorted by `sortOrder`.
 
 Each size card shows the aspect ratio as a visual rectangle, the dimensions in inches, the base price, and available anodized colors as color swatches.
 
@@ -494,16 +499,16 @@ interface AdminColor {
 
 ### Persistence
 
-All admin settings are serialized to `localStorage` under the key `npx_admin_v1`. Changes take effect immediately for all open tabs (via a `storage` event listener in `AdminContext.tsx`).
+All admin settings are persisted to the database-backed admin config record and mirrored into the browser cache for instant paint. Changes take effect immediately for all open tabs once the API save completes.
 
-**Default sizes** are seeded from `admin-store.ts` on first load if localStorage is empty.
+**Default sizes** are seeded from `admin-store.ts` on first load if the API has no admin config row yet.
 
 ### Admin Operations
 
 | Action | Notes |
 |---|---|
 | Create size | Width and height must be landscape (width > height enforced) |
-| Edit size | Opens an inline edit form; changes save immediately to localStorage |
+| Edit size | Opens an inline edit form; changes save immediately to the API-backed admin config |
 | Delete size | Removes size and all its pricing/color config permanently |
 | Toggle active | Shows/hides size in the customer size picker |
 | Set sort order | Integer field; sizes are sorted ascending |
@@ -566,7 +571,7 @@ height:  zoneY + totalHeight > innerH
 |---|---|---|
 | Cart items | React state (`App.tsx`) | **Yes** — cart is cleared on refresh |
 | Current design (zones, text, dividers) | React state (`Designer.tsx`) | **Yes** |
-| Admin sizes, pricing, colors | `localStorage` (`npx_admin_v1`) | No — persists indefinitely |
+| Admin sizes, pricing, colors, workflow settings | PostgreSQL admin config record | No — persists indefinitely |
 | Guest checkout form | React state (`CheckoutGuest.tsx`) | **Yes** |
 
 > **Note**: Because the cart resets on refresh, customers completing checkout should be advised to do so in one session.
@@ -602,15 +607,12 @@ Tiers are created in the admin size editor. There is no minimum or maximum numbe
 
 ## Known Limitations and TODOs
 
-### Security
-
-- **Admin page has no password protection.** (Follow-up task planned.) Anyone who knows the URL `/admin` can modify pricing, colors, and sizes.
-- Admin changes are stored in the **customer's own browser** via `localStorage`. Changes made by the admin in one browser are not visible in another browser. For a production deployment, admin settings should be stored server-side.
+### Security`r`n`r`n- **Admin page has no password protection.** (Follow-up task planned.) Anyone who knows the URL `/admin` can modify pricing, colors, and sizes.`r`n- Admin changes are stored server-side in the database-backed admin config record. For production, make sure the admin page is protected and the database is backed up.
 
 ### Payments
 
 - **PayPal is in sandbox mode.** No real money is processed. To go live, replace the sandbox client ID in `index.html` with a production PayPal client ID and remove the `data-env="sandbox"` flag.
-- The "Request a Quote" flow generates a UI confirmation only — no email is sent and no order is recorded anywhere.
+- The "Request a Quote" flow now records a local order and hands it off through the same order workflow, but the downstream email/invoice fulfillment still depends on your n8n workflow being configured and reachable.
 
 ### Cart
 

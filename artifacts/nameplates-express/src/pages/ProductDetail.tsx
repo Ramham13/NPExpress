@@ -343,7 +343,6 @@ export default function ProductDetail() {
                 data-testid="select-color"
                 className="w-full appearance-none rounded border border-border bg-card px-3 py-2.5 pr-8 text-sm text-foreground focus:border-primary focus:outline-none"
                 value="black"
-                readOnly
                 onChange={() => {}}
               >
                 {COLORS.map((c) => (

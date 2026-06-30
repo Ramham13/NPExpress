@@ -168,6 +168,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AdminSize"
+        workflowSettings:
+          type: object
+          additionalProperties: true
+          default: {}
     AdminConfigInput:
       type: object
       required:
@@ -177,6 +181,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AdminSize"
+        workflowSettings:
+          type: object
+          additionalProperties: true
+          default: {}
     AdminUnlockInput:
       type: object
       required:
