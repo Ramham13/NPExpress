@@ -153,7 +153,8 @@ function computeOverflowMap(
     if (!text) { result[zone.id] = { widthOverflow: false, heightOverflow: false, overflows: false }; continue; }
     const zh   = (zone.heightPct / 100) * innerH;
     const zw   = (zone.widthPct  / 100) * innerW;
-    const availW = zw - 2 * INNER_PAD;
+    // No padding — text goes right to zone edge, so overflow limit = full zone width
+    const availW = zw;
     // pt → SVG px: 1 pt = 1/72 in; plate is size.width in = VW SVG px.
     // No zone-height scaling — font size is absolute and controlled only by the user.
     const svgFontSize = Math.max(4, cfg.fontSize / 72 * (VW / size.width));
@@ -533,22 +534,35 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
         // No zone-height scaling — font size is absolute and controlled only by the user.
         const svgPt        = Math.max(4, cfg.fontSize / 72 * (VW / size.width));
         const lineH        = svgPt * 1.28;
-        const availTextW   = zw - 2 * INNER_PAD;
+        // No padding — text sits right at zone boundary.
+        const availTextW   = zw;
         const fontSpec     = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
         const lines        = (!isPlaceholder && cfg.wordWrap)
           ? wrapWords(displayText, fontSpec, availTextW)
           : displayText.split("\n");
-        const totalTH      = lines.length * lineH;
+        const numLines     = lines.length;
 
+        // hAlign: anchor text at zone left/center/right edge
         let textX: number, anchor: "start" | "middle" | "end";
-        if (cfg.hAlign === "left")       { textX = zx + INNER_PAD; anchor = "start"; }
-        else if (cfg.hAlign === "right") { textX = zx + zw - INNER_PAD; anchor = "end"; }
-        else                             { textX = zx + zw / 2;  anchor = "middle"; }
+        if (cfg.hAlign === "left")       { textX = zx;            anchor = "start";  }
+        else if (cfg.hAlign === "right") { textX = zx + zw;       anchor = "end";    }
+        else                             { textX = zx + zw / 2;   anchor = "middle"; }
 
+        // vAlign: SVG text y = baseline.
+        //   cap height ≈ svgPt * 0.72 above baseline; descender ≈ svgPt * 0.28 below.
+        //   top:    first cap top at zy           → baseY = zy + svgPt * 0.72
+        //   bottom: last descender at zy+zh       → last baseY = zy + zh - svgPt * 0.28
+        //                                         → first baseY = last - (numLines-1)*lineH
+        //   center: center of text block at zone center
         let baseY: number;
-        if (cfg.vAlign === "top")         baseY = zy + INNER_PAD + svgPt * 0.85;
-        else if (cfg.vAlign === "bottom") baseY = zy + zh - totalTH + svgPt * 0.85 - INNER_PAD;
-        else                              baseY = zy + zh / 2 - totalTH / 2 + svgPt * 0.85;
+        if (cfg.vAlign === "top") {
+          baseY = zy + svgPt * 0.72;
+        } else if (cfg.vAlign === "bottom") {
+          baseY = zy + zh - svgPt * 0.28 - (numLines - 1) * lineH;
+        } else {
+          // center: first baseline so cap-centers of all lines are centered on zy+zh/2
+          baseY = zy + zh / 2 - (numLines * lineH) / 2 + svgPt * 0.72;
+        }
 
         const ov = overflowMap[zone.id];
         const overflows = ov?.overflows ?? false;
@@ -803,8 +817,7 @@ function DividerControl({ idx, direction, config, onUpdate }: {
         </div>
       )}
       {config.enabled && (
-        <svg width="100%" height={10} className="mt-2 overflow-visible"
-          style={{ transform: direction === "vertical" ? "rotate(90deg)" : "none" }}>
+        <svg width="100%" height={10} className="mt-2">
           <line x1={0} y1={5} x2="100%" y2={5}
             stroke="hsl(210, 35%, 60%)" strokeWidth={1.5}
             strokeDasharray={config.style === "dotted" ? "3,5" : config.style === "dashed" ? "10,6" : "none"}
