@@ -18,6 +18,19 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Validates the admin password and returns a short-lived signed session token
+ * @summary Unlock admin access
+ */
+export const PostAdminUnlockBody = zod.object({
+  "password": zod.string()
+})
+
+export const PostAdminUnlockResponse = zod.object({
+  "token": zod.string().describe('Short-lived HMAC-signed session token')
+})
+
+
+/**
  * Returns the current admin configuration (sizes, pricing, colors)
  * @summary Get admin configuration
  */

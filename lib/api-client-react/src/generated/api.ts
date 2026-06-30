@@ -22,6 +22,9 @@ import type {
 import type {
   AdminConfig,
   AdminConfigInput,
+  AdminUnlockInput,
+  AdminUnlockResponse,
+  ErrorResponse,
   HealthStatus
 } from './api.schemas';
 
@@ -129,6 +132,77 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
+
+export const getPostAdminUnlockUrl = () => {
+
+
+
+
+  return `/api/admin/unlock`
+}
+
+/**
+ * Validates the admin password and returns a short-lived signed session token
+ * @summary Unlock admin access
+ */
+export const postAdminUnlock = async (adminUnlockInput: AdminUnlockInput, options?: RequestInit): Promise<AdminUnlockResponse> => {
+
+  return customFetch<AdminUnlockResponse>(getPostAdminUnlockUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminUnlockInput)
+  }
+);}
+
+
+
+
+export const getPostAdminUnlockMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postAdminUnlock>>, TError,{data: BodyType<AdminUnlockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postAdminUnlock>>, TError,{data: BodyType<AdminUnlockInput>}, TContext> => {
+
+const mutationKey = ['postAdminUnlock'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postAdminUnlock>>, {data: BodyType<AdminUnlockInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  postAdminUnlock(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostAdminUnlockMutationResult = NonNullable<Awaited<ReturnType<typeof postAdminUnlock>>>
+    export type PostAdminUnlockMutationBody = BodyType<AdminUnlockInput>
+    export type PostAdminUnlockMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Unlock admin access
+ */
+export const usePostAdminUnlock = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postAdminUnlock>>, TError,{data: BodyType<AdminUnlockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postAdminUnlock>>,
+        TError,
+        {data: BodyType<AdminUnlockInput>},
+        TContext
+      > => {
+      return useMutation(getPostAdminUnlockMutationOptions(options));
+    }
 
 export const getGetAdminConfigUrl = () => {
 

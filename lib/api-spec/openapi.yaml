@@ -26,6 +26,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /admin/unlock:
+    post:
+      operationId: postAdminUnlock
+      tags: [admin]
+      summary: Unlock admin access
+      description: Validates the admin password and returns a short-lived signed session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUnlockInput"
+      responses:
+        "200":
+          description: Unlock successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUnlockResponse"
+        "401":
+          description: Invalid password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/config:
     get:
       operationId: getAdminConfig
@@ -152,3 +177,25 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AdminSize"
+    AdminUnlockInput:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+    AdminUnlockResponse:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: Short-lived HMAC-signed session token
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

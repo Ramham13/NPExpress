@@ -44,3 +44,16 @@ export interface AdminConfigInput {
   sizes: AdminSize[];
 }
 
+export interface AdminUnlockInput {
+  password: string;
+}
+
+export interface AdminUnlockResponse {
+  /** Short-lived HMAC-signed session token */
+  token: string;
+}
+
+export interface ErrorResponse {
+  error: string;
+}
+

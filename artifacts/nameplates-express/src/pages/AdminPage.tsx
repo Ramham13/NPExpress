@@ -3,6 +3,7 @@
  * Not linked from any customer-facing navigation.
  */
 import { useState, useCallback, createContext, useContext } from "react";
+import { postAdminUnlock } from "@workspace/api-client-react";
 import { useAdmin, ADMIN_KEY_SESSION_STORAGE } from "@/context/AdminContext";
 import {
   type AdminSize, type ColorOption, type PricingTier,
@@ -15,9 +16,6 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// TODO: Replace with a real auth system before going to production.
-// For a quick update, change this value and redeploy.
-const ADMIN_PASSWORD = "admin1234";
 const ADMIN_SESSION_KEY = "nx_admin_unlocked";
 
 const MAX_TIERS = 5;
@@ -28,19 +26,24 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   const [unlocked, setUnlocked] = useState(
     () => sessionStorage.getItem(ADMIN_SESSION_KEY) === "1"
   );
-  const [input, setInput]     = useState("");
-  const [error, setError]     = useState(false);
+  const [input, setInput]   = useState("");
+  const [error, setError]   = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  function handleUnlock(e: React.FormEvent) {
+  async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
-    if (input === ADMIN_PASSWORD) {
+    setLoading(true);
+    setError(false);
+    try {
+      const { token } = await postAdminUnlock({ password: input });
       sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
-      sessionStorage.setItem(ADMIN_KEY_SESSION_STORAGE, input);
+      sessionStorage.setItem(ADMIN_KEY_SESSION_STORAGE, token);
       setUnlocked(true);
-      setError(false);
-    } else {
+    } catch {
       setError(true);
       setInput("");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -82,9 +85,10 @@ function AdminGate({ children }: { children: React.ReactNode }) {
               </div>
               <button
                 type="submit"
-                className="w-full rounded bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-bold text-white transition-colors"
+                disabled={loading}
+                className="w-full rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-60 px-4 py-2.5 text-sm font-bold text-white transition-colors"
               >
-                Unlock
+                {loading ? "Checking…" : "Unlock"}
               </button>
             </form>
           </div>

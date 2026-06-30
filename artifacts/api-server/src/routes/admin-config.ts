@@ -2,15 +2,12 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, adminConfigTable } from "@workspace/db";
 import { GetAdminConfigResponse, PutAdminConfigBody, PutAdminConfigResponse } from "@workspace/api-zod";
+import { verifyAdminToken } from "../lib/admin-token";
 
 const router: IRouter = Router();
 
-/**
- * Returns the current admin key from the environment.
- * Falls back to the hardcoded default — task #1 replaces this with a real secret.
- */
-function getAdminKey(): string {
-  return process.env.ADMIN_KEY ?? "admin1234";
+function getAdminPassword(): string {
+  return process.env.ADMIN_PASSWORD ?? "";
 }
 
 router.get("/admin/config", async (req, res) => {
@@ -29,8 +26,14 @@ router.get("/admin/config", async (req, res) => {
 });
 
 router.put("/admin/config", async (req, res) => {
-  const providedKey = req.headers["x-admin-key"];
-  if (!providedKey || providedKey !== getAdminKey()) {
+  const providedToken = req.headers["x-admin-key"];
+  const adminPassword = getAdminPassword();
+
+  if (
+    !adminPassword ||
+    typeof providedToken !== "string" ||
+    !verifyAdminToken(providedToken, adminPassword)
+  ) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
