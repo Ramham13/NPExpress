@@ -7,49 +7,113 @@ import {
 } from "@/data/templates";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MIN_WEIGHT = 5;   // minimum raw weight per zone (prevents collapse)
-const WEIGHT_STEP = 5;  // increment/decrement step for +/- buttons
-const SVG_VW = 1000;    // SVG viewBox width (fixed; height derived per size)
+const STEP = 5;       // all height values are multiples of this
+const MIN_H = 10;     // minimum height % per zone
+const SVG_VW = 1000;  // SVG viewBox width (fixed)
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Height helpers ───────────────────────────────────────────────────────────
 
-/** Build positioned TextZone[] from raw weights (proportional allocation). */
-function weightsToZones(weights: number[]): TextZone[] {
+/** Round to nearest STEP. */
+const snap = (v: number) => Math.round(v / STEP) * STEP;
+
+/**
+ * Default equal-split heights for N lines, each a multiple of STEP summing to 100.
+ * Remainder is distributed (last zone gets any extra).
+ */
+function defaultHeights(n: number): number[] {
+  const base = snap(Math.floor(100 / n / STEP) * STEP);
+  const arr = Array(n).fill(base);
+  let diff = 100 - arr.reduce((a, b) => a + b, 0);
+  for (let i = arr.length - 1; i >= 0 && diff !== 0; i--) {
+    const add = Math.sign(diff) * STEP;
+    arr[i] += add;
+    diff -= add;
+  }
+  return arr;
+}
+
+/**
+ * Convert a template's zone heights to 5%-increment values summing to 100.
+ * Each zone is clamped to MIN_H minimum.
+ */
+function heightsFromTemplate(zones: TextZone[]): number[] {
+  const total = zones.reduce((s, z) => s + z.heightPct, 0);
+  const raw = zones.map((z) => snap((z.heightPct / total) * 100));
+  const diff = 100 - raw.reduce((a, b) => a + b, 0);
+  // Dump rounding drift onto the largest zone
+  const biggest = raw.indexOf(Math.max(...raw));
+  raw[biggest] = Math.max(MIN_H, raw[biggest] + diff);
+  return raw.map((v) => Math.max(MIN_H, v));
+}
+
+/**
+ * Build TextZone[] from height percentages (each a multiple of STEP summing to 100).
+ * Heights control the proportional allocation of the available text area.
+ */
+function computeZones(heights: number[]): TextZone[] {
   const TOP = 5, BOT = 5, GAP = 2;
-  const n = weights.length;
+  const n = heights.length;
   const available = 100 - TOP - BOT - GAP * (n - 1);
-  const total = weights.reduce((a, b) => a + b, 0);
   let yOff = TOP;
-  return weights.map((w, i) => {
-    const h = (w / total) * available;
+  return heights.map((h, i) => {
+    const zonePct = (h / 100) * available;
     const zone: TextZone = {
       id: `line${i + 1}`,
       label: n === 1 ? "Text" : `Line ${i + 1}`,
       placeholder: n === 1 ? "YOUR TEXT HERE" : `LINE ${i + 1}`,
-      xPct: 4, yPct: yOff, widthPct: 92, heightPct: h,
+      xPct: 4, yPct: yOff, widthPct: 92, heightPct: zonePct,
       align: "center" as const,
     };
-    yOff += h + GAP;
+    yOff += zonePct + GAP;
     return zone;
   });
 }
 
-/** Return each weight's share as a rounded integer percentage (sums ≈ 100). */
-function normalizedPcts(weights: number[]): number[] {
-  const total = weights.reduce((a, b) => a + b, 0);
-  const raw = weights.map((w) => w / total * 100);
-  // Round and fix drift so sum == 100
-  const floored = raw.map(Math.floor);
-  const diff = 100 - floored.reduce((a, b) => a + b, 0);
-  const indices = [...raw.keys()].sort((a, b) => (raw[b] % 1) - (raw[a] % 1));
-  indices.slice(0, diff).forEach((i) => floored[i]++);
-  return floored;
+/**
+ * Adjust one zone's height by `delta` (+5 or -5), stealing from / giving to
+ * the most-generous other zone. Returns unchanged array if the move is impossible.
+ */
+function adjustOne(heights: number[], idx: number, delta: number): number[] {
+  const n = heights.length;
+  const proposed = heights[idx] + delta;
+  if (proposed < MIN_H || proposed > 100 - MIN_H * (n - 1)) return heights;
+
+  const others = [...Array(n).keys()].filter((i) => i !== idx);
+
+  if (delta > 0) {
+    // Need to take 5% from another zone — pick the largest one with room
+    const donor = others
+      .filter((i) => heights[i] - STEP >= MIN_H)
+      .sort((a, b) => heights[b] - heights[a])[0];
+    if (donor === undefined) return heights;
+    const next = [...heights];
+    next[idx] += STEP;
+    next[donor] -= STEP;
+    return next;
+  } else {
+    // Give 5% to another zone — pick the smallest one
+    const recipient = others.sort((a, b) => heights[a] - heights[b])[0];
+    const next = [...heights];
+    next[idx] -= STEP;
+    next[recipient] += STEP;
+    return next;
+  }
 }
 
-/** Derive initial weights from a template's zone heightPcts. */
-function weightsFromTemplate(zones: TextZone[]): number[] {
-  const total = zones.reduce((s, z) => s + z.heightPct, 0);
-  return zones.map((z) => Math.max(MIN_WEIGHT, Math.round((z.heightPct / total) * 100)));
+/**
+ * Move the divider between zones `idx` and `idx+1` by `deltaPercent` (pre-snapped).
+ * Only those two zones change; their combined total stays constant.
+ */
+function moveDivider(heights: number[], idx: number, deltaPercent: number): number[] {
+  const combined = heights[idx] + heights[idx + 1];
+  const newI = Math.max(MIN_H, Math.min(combined - MIN_H, heights[idx] + deltaPercent));
+  const snappedI = snap(newI);
+  const snappedNext = combined - snappedI;
+  if (snappedNext < MIN_H) return heights; // can't satisfy constraint
+  const next = [...heights];
+  next[idx] = snappedI;
+  next[idx + 1] = snappedNext;
+  return next;
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
@@ -57,12 +121,11 @@ function weightsFromTemplate(zones: TextZone[]): number[] {
 export default function Designer() {
   const [selectedSize, setSelectedSize] = useState<TagSize | null>(null);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
-  const [weights, setWeights] = useState<number[]>([10]);
+  const [heights, setHeights] = useState<number[]>([100]);       // 5%-increment %s summing to 100
   const [lineConfigs, setLineConfigs] = useState<ZoneConfigs>({ line1: defaultZoneConfig() });
 
-  const zones = useMemo(() => weightsToZones(weights), [weights]);
-  const heightPcts = useMemo(() => normalizedPcts(weights), [weights]);
-  const numLines = weights.length;
+  const zones = useMemo(() => computeZones(heights), [heights]);
+  const numLines = heights.length;
 
   const compatibleTemplates = selectedSize
     ? TEMPLATES.filter((t) => t.compatibleSizes.includes(selectedSize.id))
@@ -71,7 +134,7 @@ export default function Designer() {
   function pickSize(size: TagSize) {
     setSelectedSize(size);
     setActiveTemplateId(null);
-    setWeights([10]);
+    setHeights([100]);
     setLineConfigs({ line1: defaultZoneConfig() });
   }
 
@@ -81,10 +144,10 @@ export default function Designer() {
 
   function selectTemplate(template: Template) {
     setActiveTemplateId(template.id);
-    const w = weightsFromTemplate(template.zones);
-    setWeights(w);
+    const h = heightsFromTemplate(template.zones);
+    setHeights(h);
     const cfg: ZoneConfigs = {};
-    template.zones.forEach((z, i) => {
+    template.zones.forEach((_, i) => {
       const id = `line${i + 1}`;
       cfg[id] = lineConfigs[id] ?? defaultZoneConfig();
     });
@@ -93,30 +156,24 @@ export default function Designer() {
 
   function changeNumLines(n: number) {
     setActiveTemplateId(null);
-    const newW = Array(n).fill(10);
+    const h = defaultHeights(n);
     const oldVals = Object.values(lineConfigs);
     const cfg: ZoneConfigs = {};
-    newW.forEach((_, i) => {
+    h.forEach((_, i) => {
       const id = `line${i + 1}`;
       cfg[id] = oldVals[i] ?? defaultZoneConfig();
     });
-    setWeights(newW);
+    setHeights(h);
     setLineConfigs(cfg);
   }
 
-  /** Change one zone's weight by delta; other zones are unaffected (proportions shift naturally). */
-  function adjustWeight(idx: number, delta: number) {
-    setWeights((prev) => {
-      const next = [...prev];
-      next[idx] = Math.max(MIN_WEIGHT, next[idx] + delta);
-      return next;
-    });
+  function adjustHeight(idx: number, delta: number) {
+    setHeights((prev) => adjustOne(prev, idx, delta));
     setActiveTemplateId(null);
   }
 
-  /** Called from the SVG drag handler — directly sets new weights. */
-  const handleWeightsChange = useCallback((newW: number[]) => {
-    setWeights(newW);
+  const handleHeightsChange = useCallback((h: number[]) => {
+    setHeights(h);
     setActiveTemplateId(null);
   }, []);
 
@@ -173,8 +230,8 @@ export default function Designer() {
             size={selectedSize}
             zones={zones}
             lineConfigs={lineConfigs}
-            weights={weights}
-            onWeightsChange={handleWeightsChange}
+            heights={heights}
+            onHeightsChange={handleHeightsChange}
           />
         </div>
 
@@ -184,9 +241,9 @@ export default function Designer() {
             zones={zones}
             lineConfigs={lineConfigs}
             numLines={numLines}
-            heightPcts={heightPcts}
+            heights={heights}
             onChangeNumLines={changeNumLines}
-            onAdjustWeight={adjustWeight}
+            onAdjustHeight={adjustHeight}
             onUpdateZone={updateZone}
           />
         </aside>
@@ -295,11 +352,11 @@ function TemplatePanel({ size, templates, activeTemplateId, onBlank, onTemplate 
   );
 }
 
-// ─── Center: interactive SVG plate ────────────────────────────────────────────
+// ─── Center: interactive plate preview ────────────────────────────────────────
 
-function PlatePreview({ size, zones, lineConfigs, weights, onWeightsChange }: {
+function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
   size: TagSize; zones: TextZone[]; lineConfigs: ZoneConfigs;
-  weights: number[]; onWeightsChange: (w: number[]) => void;
+  heights: number[]; onHeightsChange: (h: number[]) => void;
 }) {
   const VW = SVG_VW;
   const VH = Math.round(VW * size.height / size.width);
@@ -308,44 +365,39 @@ function PlatePreview({ size, zones, lineConfigs, weights, onWeightsChange }: {
   const innerW = VW - PAD * 2;
   const innerH = VH - PAD * 2;
 
+  // Available text-area height in SVG units (excluding top/bottom padding and gaps)
+  const n = heights.length;
+  const TOP_PCT = 5, BOT_PCT = 5, GAP_PCT = 2;
+  const availPct = 100 - TOP_PCT - BOT_PCT - GAP_PCT * (n - 1);
+  const availH = (availPct / 100) * innerH;
+
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const dragRef = useRef<{ idx: number; startClientY: number; startWeights: number[] } | null>(null);
+  const dragRef = useRef<{ idx: number; startClientY: number; startHeights: number[] } | null>(null);
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
   const [hoveredDivider, setHoveredDivider] = useState<number | null>(null);
-
-  // GAP between zones in SVG units
-  const TOP = 5, BOT = 5, GAP_PCT = 2;
-  const n = zones.length;
-  const availablePct = 100 - TOP - BOT - GAP_PCT * (n - 1);
-  const availH = (availablePct / 100) * innerH;
 
   function onDividerPointerDown(idx: number, e: React.PointerEvent) {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
-    dragRef.current = { idx, startClientY: e.clientY, startWeights: [...weights] };
+    dragRef.current = { idx, startClientY: e.clientY, startHeights: [...heights] };
     setDraggingIdx(idx);
   }
 
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       if (!dragRef.current || !svgRef.current) return;
-      const { idx, startClientY, startWeights } = dragRef.current;
+      const { idx, startClientY, startHeights } = dragRef.current;
 
       const svgRect = svgRef.current.getBoundingClientRect();
-      const svgScale = VH / svgRect.height;          // SVG units per CSS pixel
-      const deltaY = (e.clientY - startClientY) * svgScale; // in SVG units
+      // Convert pixel delta → SVG units → percentage of available text area
+      const svgDeltaY = (e.clientY - startClientY) * (VH / svgRect.height);
+      const rawPctDelta = (svgDeltaY / availH) * 100;
+      // Snap to nearest 5%
+      const snappedDelta = snap(rawPctDelta);
+      if (snappedDelta === 0) return;
 
-      // Convert deltaY (SVG units) → weight delta
-      const total = startWeights.reduce((a, b) => a + b, 0);
-      const deltaWeight = (deltaY / availH) * total;
-
-      const newW = [...startWeights];
-      // Only redistribute between the two adjacent zones
-      const maxI = startWeights[idx] + startWeights[idx + 1] - MIN_WEIGHT;
-      newW[idx] = Math.max(MIN_WEIGHT, Math.min(maxI, startWeights[idx] + deltaWeight));
-      newW[idx + 1] = startWeights[idx] + startWeights[idx + 1] - newW[idx];
-
-      onWeightsChange(newW);
+      const moved = moveDivider(startHeights, idx, snappedDelta);
+      if (moved !== startHeights) onHeightsChange(moved);
     }
 
     function onMouseUp() {
@@ -359,10 +411,10 @@ function PlatePreview({ size, zones, lineConfigs, weights, onWeightsChange }: {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [VH, availH, onWeightsChange]);
+  }, [VH, availH, onHeightsChange]);
 
-  // Pre-compute zone rects in SVG units
-  const zoneRects = zones.map((zone) => ({
+  // Pre-compute zone rects in SVG viewBox units
+  const rects = zones.map((zone) => ({
     zone,
     zx: PAD + (zone.xPct / 100) * innerW,
     zy: PAD + (zone.yPct / 100) * innerH,
@@ -389,7 +441,7 @@ function PlatePreview({ size, zones, lineConfigs, weights, onWeightsChange }: {
         </linearGradient>
       </defs>
 
-      {/* Plate background */}
+      {/* Plate */}
       <rect x={0} y={0} width={VW} height={VH} rx={VW * 0.008} fill="url(#pb)" />
       <rect x={0} y={0} width={VW} height={VH} rx={VW * 0.008} fill="url(#ps)" />
       <rect x={1.5} y={1.5} width={VW - 3} height={VH - 3} rx={VW * 0.007}
@@ -397,8 +449,8 @@ function PlatePreview({ size, zones, lineConfigs, weights, onWeightsChange }: {
       <rect x={5} y={5} width={VW - 10} height={VH - 10} rx={VW * 0.005}
         fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={VW * 0.002} />
 
-      {/* Zones with text */}
-      {zoneRects.map(({ zone, zx, zy, zw, zh }) => {
+      {/* Zone rects + text */}
+      {rects.map(({ zone, zx, zy, zw, zh }) => {
         const cfg = lineConfigs[zone.id] ?? defaultZoneConfig();
         const font = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
         const displayText = cfg.text || zone.placeholder;
@@ -440,57 +492,34 @@ function PlatePreview({ size, zones, lineConfigs, weights, onWeightsChange }: {
         );
       })}
 
-      {/* Draggable dividers between zones (only when multi-line) */}
-      {n > 1 && zoneRects.slice(0, -1).map(({ zx, zy, zw, zh }, i) => {
-        const next = zoneRects[i + 1];
-        const gapTop = zy + zh;
-        const gapBot = next.zy;
-        const midY = (gapTop + gapBot) / 2;
-        const isHover = hoveredDivider === i;
-        const isDrag = draggingIdx === i;
-        const active = isHover || isDrag;
-        const lineColor = active ? "hsl(24, 95%, 53%)" : "hsl(220, 18%, 42%)";
-        const pillColor = active ? "hsl(24, 95%, 53%)" : "hsl(220, 20%, 32%)";
-        const pillW = 60, pillH = 14, pillR = 7;
+      {/* Draggable dividers between zones */}
+      {n > 1 && rects.slice(0, -1).map(({ zx, zy, zw, zh }, i) => {
+        const next = rects[i + 1];
+        const midY = (zy + zh + next.zy) / 2;
+        const active = hoveredDivider === i || draggingIdx === i;
+        const lineColor = active ? "hsl(24, 95%, 53%)" : "hsl(220, 18%, 44%)";
+        const pillFill = active ? "hsl(24, 95%, 53%)" : "hsl(220, 20%, 30%)";
+        const pillW = 70, pillH = 15;
 
         return (
-          <g
-            key={`divider-${i}`}
-            style={{ cursor: "ns-resize" }}
+          <g key={`div-${i}`} style={{ cursor: "ns-resize" }}
             onPointerDown={(e) => onDividerPointerDown(i, e)}
             onMouseEnter={() => setHoveredDivider(i)}
-            onMouseLeave={() => setHoveredDivider(null)}
-          >
-            {/* Invisible fat hit target */}
-            <rect
-              x={zx} y={midY - 12}
-              width={zw} height={24}
-              fill="transparent"
-              style={{ cursor: "ns-resize" }}
-            />
-            {/* Dashed guide line */}
-            <line
-              x1={zx} y1={midY} x2={zx + zw} y2={midY}
-              stroke={lineColor}
-              strokeWidth={active ? 2 : 1.5}
-              strokeDasharray={active ? "0" : "6,4"}
-              strokeOpacity={active ? 1 : 0.6}
-              style={{ pointerEvents: "none" }}
-            />
+            onMouseLeave={() => setHoveredDivider(null)}>
+            {/* Wide invisible hit zone */}
+            <rect x={zx} y={midY - 12} width={zw} height={24} fill="transparent" style={{ cursor: "ns-resize" }} />
+            {/* Guide line */}
+            <line x1={zx} y1={midY} x2={zx + zw} y2={midY}
+              stroke={lineColor} strokeWidth={active ? 2.5 : 1.5}
+              strokeDasharray={active ? "0" : "6,4"} strokeOpacity={active ? 1 : 0.55}
+              style={{ pointerEvents: "none" }} />
             {/* Pill handle */}
-            <rect
-              x={zx + zw / 2 - pillW / 2} y={midY - pillH / 2}
-              width={pillW} height={pillH} rx={pillR}
-              fill={pillColor}
-              style={{ pointerEvents: "none" }}
-            />
-            {/* Arrows inside pill */}
-            <text
-              x={zx + zw / 2} y={midY + 4}
-              textAnchor="middle" fontSize={10}
-              fill="white" fontFamily="sans-serif"
-              style={{ pointerEvents: "none", userSelect: "none" }}
-            >
+            <rect x={zx + zw / 2 - pillW / 2} y={midY - pillH / 2}
+              width={pillW} height={pillH} rx={pillH / 2}
+              fill={pillFill} style={{ pointerEvents: "none" }} />
+            <text x={zx + zw / 2} y={midY + 4} textAnchor="middle"
+              fontSize={10} fill="rgba(255,255,255,0.9)" fontFamily="sans-serif"
+              style={{ pointerEvents: "none", userSelect: "none" }}>
               ▲ ▼
             </text>
           </g>
@@ -502,16 +531,15 @@ function PlatePreview({ size, zones, lineConfigs, weights, onWeightsChange }: {
 
 // ─── Right panel ──────────────────────────────────────────────────────────────
 
-function CustomizePanel({ zones, lineConfigs, numLines, heightPcts, onChangeNumLines, onAdjustWeight, onUpdateZone }: {
+function CustomizePanel({ zones, lineConfigs, numLines, heights, onChangeNumLines, onAdjustHeight, onUpdateZone }: {
   zones: TextZone[]; lineConfigs: ZoneConfigs;
-  numLines: number; heightPcts: number[];
+  numLines: number; heights: number[];
   onChangeNumLines: (n: number) => void;
-  onAdjustWeight: (idx: number, delta: number) => void;
+  onAdjustHeight: (idx: number, delta: number) => void;
   onUpdateZone: (id: string, patch: Partial<ZoneConfig>) => void;
 }) {
   return (
     <div className="p-3 space-y-4">
-      {/* Lines of text */}
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Lines of Text</p>
         <div className="flex gap-1.5">
@@ -529,17 +557,16 @@ function CustomizePanel({ zones, lineConfigs, numLines, heightPcts, onChangeNumL
 
       <div className="border-t border-border" />
 
-      {/* Per-zone editors */}
       {zones.map((zone, idx) => (
         <ZoneEditor
           key={zone.id}
           zone={zone}
           idx={idx}
-          heightPct={heightPcts[idx] ?? 0}
+          heightPct={heights[idx] ?? 0}
           showHeightControl={numLines > 1}
           cfg={lineConfigs[zone.id] ?? defaultZoneConfig()}
           onUpdate={(patch) => onUpdateZone(zone.id, patch)}
-          onAdjustHeight={(delta) => onAdjustWeight(idx, delta)}
+          onAdjustHeight={(delta) => onAdjustHeight(idx, delta)}
         />
       ))}
     </div>
@@ -566,23 +593,19 @@ function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, onUpdate, on
           <span className="text-xs font-semibold text-foreground">{zone.label}</span>
         </div>
         {showHeightControl && (
-          <div className="flex items-center gap-1" title="Zone height (drag divider on preview or use buttons)">
-            <button
-              data-testid={`button-height-minus-${zone.id}`}
-              onClick={() => onAdjustHeight(-WEIGHT_STEP)}
+          <div className="flex items-center gap-1" title="Zone height in 5% steps — or drag dividers on the preview">
+            <button data-testid={`button-height-minus-${zone.id}`}
+              onClick={() => onAdjustHeight(-STEP)}
               className="flex h-5 w-5 items-center justify-center rounded border border-border bg-background text-foreground hover:border-primary text-xs font-bold leading-none"
-              aria-label="Decrease height"
-            >−</button>
-            <span
-              data-testid={`text-height-pct-${zone.id}`}
-              className="font-mono text-[10px] font-bold text-muted-foreground w-8 text-center tabular-nums"
-            >{heightPct}%</span>
-            <button
-              data-testid={`button-height-plus-${zone.id}`}
-              onClick={() => onAdjustHeight(+WEIGHT_STEP)}
+              aria-label="Decrease height by 5%">−</button>
+            <span data-testid={`text-height-pct-${zone.id}`}
+              className="font-mono text-[10px] font-bold text-muted-foreground w-8 text-center tabular-nums">
+              {heightPct}%
+            </span>
+            <button data-testid={`button-height-plus-${zone.id}`}
+              onClick={() => onAdjustHeight(+STEP)}
               className="flex h-5 w-5 items-center justify-center rounded border border-border bg-background text-foreground hover:border-primary text-xs font-bold leading-none"
-              aria-label="Increase height"
-            >+</button>
+              aria-label="Increase height by 5%">+</button>
           </div>
         )}
       </div>
@@ -623,12 +646,10 @@ function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, onUpdate, on
               ~{letterHeight}"
             </span>
           </div>
-          <ToggleBtn testId={`button-bold-${zone.id}`} active={cfg.bold} title="Bold" onClick={() => onUpdate({ bold: !cfg.bold })}>
-            <Bold size={11} />
-          </ToggleBtn>
-          <ToggleBtn testId={`button-italic-${zone.id}`} active={cfg.italic} title="Italic" onClick={() => onUpdate({ italic: !cfg.italic })}>
-            <Italic size={11} />
-          </ToggleBtn>
+          <ToggleBtn testId={`button-bold-${zone.id}`} active={cfg.bold} title="Bold"
+            onClick={() => onUpdate({ bold: !cfg.bold })}><Bold size={11} /></ToggleBtn>
+          <ToggleBtn testId={`button-italic-${zone.id}`} active={cfg.italic} title="Italic"
+            onClick={() => onUpdate({ italic: !cfg.italic })}><Italic size={11} /></ToggleBtn>
         </div>
 
         <div className="flex items-center gap-1">
