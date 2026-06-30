@@ -6,7 +6,7 @@
  * - Accept → add all to cart; Cancel → return to designer
  */
 import { useState, useRef } from "react";
-import { Upload, AlertTriangle, CheckCircle2, X, ArrowLeft, ShoppingCart } from "lucide-react";
+import { Upload, AlertTriangle, CheckCircle2, X, ArrowLeft, ShoppingCart, Download } from "lucide-react";
 import PlateFinalPreview from "@/components/PlateFinalPreview";
 import {
   computeOverflowMap, computeHZones, computeVZones,
@@ -70,6 +70,31 @@ function buildRowConfigs(
     };
   });
   return result;
+}
+
+// ─── CSV template generator ───────────────────────────────────────────────────
+const EXAMPLE_ROWS: string[][] = [
+  ["ACME INDUSTRIES", "UNIT NO. 4", "SN: 00456", "MFG: 2024", "ZONE 5", "ZONE 6", "ZONE 7", "ZONE 8", "ZONE 9", "ZONE 10"],
+  ["PUMP MOTOR A", "SN: 00123-B", "PANEL MCC-3", "CB-12-A", "ZONE 5", "ZONE 6", "ZONE 7", "ZONE 8", "ZONE 9", "ZONE 10"],
+  ["CONTROL PANEL", "CIRCUIT 1", "SECTION B", "DEPT 4", "ZONE 5", "ZONE 6", "ZONE 7", "ZONE 8", "ZONE 9", "ZONE 10"],
+];
+
+function downloadCsvTemplate(zones: TextZone[]) {
+  const numCols = Math.max(1, Math.min(10, zones.length));
+  const escapeCell = (v: string) => v.includes(",") || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v;
+
+  const lines: string[] = [];
+  EXAMPLE_ROWS.forEach((row) => {
+    lines.push(row.slice(0, numCols).map(escapeCell).join(","));
+  });
+
+  const blob = new Blob([lines.join("\r\n") + "\r\n"], { type: "text/csv" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = "nameplates-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function CsvView({ size, direction, heights, widths, baseLineConfigs, dividers, onAccept, onBack }: Props) {
@@ -163,7 +188,7 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
               onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files); }}
               onClick={() => fileRef.current?.click()}
               className={`
-                cursor-pointer rounded-lg border-2 border-dashed p-16 text-center transition-colors
+                cursor-pointer rounded-lg border-2 border-dashed p-14 text-center transition-colors
                 ${dragOver
                   ? "border-blue-500 bg-blue-950/20"
                   : "border-slate-700 hover:border-slate-500 bg-[hsl(220_20%_11%)]"}
@@ -178,6 +203,23 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
               className="hidden"
               onChange={(e) => handleFile(e.target.files)}
             />
+
+            {/* Template download */}
+            <div className="mt-5 flex flex-col items-center gap-2">
+              <p className="text-xs text-slate-500">
+                Not sure of the format? Download a ready-to-fill template:
+              </p>
+              <button
+                onClick={(e) => { e.stopPropagation(); downloadCsvTemplate(zones); }}
+                className="flex items-center gap-2 rounded border border-slate-600 bg-[hsl(220_20%_13%)] px-4 py-2 text-sm text-slate-300 hover:border-blue-500 hover:text-blue-400 transition-colors"
+              >
+                <Download size={14} />
+                Download CSV Template ({zones.length} column{zones.length !== 1 ? "s" : ""})
+              </button>
+              <p className="text-[11px] text-slate-600">
+                Fill it out with your nameplate text, save as .csv, then upload above.
+              </p>
+            </div>
           </div>
         )}
 

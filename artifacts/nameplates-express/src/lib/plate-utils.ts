@@ -179,16 +179,21 @@ export function computeTextLayout(
   size: TagSize,
   isPlaceholder: boolean,
 ): TextLayout {
-  const font      = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
-  const displayTx = cfg.text || zone.placeholder;
-  const svgPt     = ptToSvgPx(cfg.fontSize, size.width);
-  const lineH     = svgPt * 1.2; // 120% line height — tight but readable
-  const fontSpec  = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
+  const font   = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
+  const svgPt  = ptToSvgPx(cfg.fontSize, size.width);
+  const lineH  = svgPt * 1.2; // 120% line height — space between line tops
+  const fontSpec = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
 
-  const rawLines = (!isPlaceholder && cfg.wordWrap)
-    ? wrapWords(displayTx, fontSpec, zw)
-    : displayTx.split("\n");
-  const lines = rawLines.length ? rawLines : [""];
+  // Empty zones render nothing in the preview — placeholders are form-only.
+  let lines: string[];
+  if (isPlaceholder) {
+    lines = [];
+  } else {
+    const rawLines = cfg.wordWrap
+      ? wrapWords(cfg.text, fontSpec, zw)
+      : cfg.text.split("\n");
+    lines = rawLines.length ? rawLines : [""];
+  }
 
   // Horizontal anchor
   let textX: number, anchor: "start" | "middle" | "end";
@@ -196,12 +201,24 @@ export function computeTextLayout(
   else if (cfg.hAlign === "right") { textX = zx + zw;     anchor = "end";    }
   else                             { textX = zx + zw / 2; anchor = "middle"; }
 
-  // Vertical: y = top of em square (dominantBaseline="hanging")
-  const blockH     = lines.length * lineH;
+  // Vertical positioning — dominantBaseline="hanging" means y = top of em square.
+  //
+  // The visual block spans from top of first em square to bottom of last em square.
+  // blockH = (n−1) lines of full lineH + one final svgPt (no trailing gap after last line).
+  // This ensures bottom-aligned text has zero gap between the last glyph and the zone edge.
+  const n      = lines.length;
+  const blockH = n <= 1 ? svgPt : (n - 1) * lineH + svgPt;
+
   let firstLineY: number;
-  if (cfg.vAlign === "top")         firstLineY = zy;
-  else if (cfg.vAlign === "bottom") firstLineY = zy + zh - blockH;
-  else                              firstLineY = zy + (zh - blockH) / 2;
+  if (lines.length === 0) {
+    firstLineY = zy; // irrelevant — nothing is drawn
+  } else if (cfg.vAlign === "top") {
+    firstLineY = zy;
+  } else if (cfg.vAlign === "bottom") {
+    firstLineY = zy + zh - blockH;
+  } else {
+    firstLineY = zy + (zh - blockH) / 2;
+  }
 
   return { lines, lineH, svgPt, firstLineY, textX, anchor };
 }

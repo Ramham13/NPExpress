@@ -132,7 +132,7 @@ export const FONT_SIZE_OPTIONS = [6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 
 export function defaultZoneConfig(): ZoneConfig {
   return {
     text: "", fontId: "arial", fontSize: 14,
-    bold: false, italic: false,
+    bold: true, italic: false,
     hAlign: "center", vAlign: "center",
     wordWrap: false,
   };
