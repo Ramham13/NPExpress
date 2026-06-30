@@ -68,8 +68,16 @@ export default function PlateFinalPreview({
           <stop offset="0%"  stopColor={cs.sheen} />
           <stop offset="45%" stopColor="rgba(255,255,255,0)" />
         </linearGradient>
+        {/*
+         * Clip to the plate's inner boundary (innerW × innerH, inset by PAD on all sides).
+         * Using the zone bounds here would silently hide segment-overflow text — text that
+         * overflows its zone but stays within the plate inner area is allowed through on
+         * submission, so the final preview must show it. The outer rounded-rect plate shape
+         * is enforced by the plate body rects (rendered outside this clip group); this clip
+         * only constrains text and dividers to the engravable inner area.
+         */}
         <clipPath id={idClip}>
-          <rect x={0} y={0} width={VW} height={VH} rx={VW * 0.008} />
+          <rect x={PAD} y={PAD} width={innerW} height={innerH} />
         </clipPath>
       </defs>
 
