@@ -37,6 +37,8 @@ export interface ZoneConfig {
   fontSize: number;
   bold: boolean;
   italic: boolean;
+  hAlign: "left" | "center" | "right";
+  vAlign: "top" | "center" | "bottom";
 }
 
 export type ZoneConfigs = Record<string, ZoneConfig>;
@@ -200,5 +202,12 @@ export const FONT_OPTIONS: FontOption[] = [
 export const FONT_SIZE_OPTIONS = [6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48];
 
 export function defaultZoneConfig(): ZoneConfig {
-  return { text: "", fontId: "arial", fontSize: 14, bold: false, italic: false };
+  return { text: "", fontId: "arial", fontSize: 14, bold: false, italic: false, hAlign: "center", vAlign: "center" };
+}
+
+/** Approximate capital-letter height in inches for a given point size.
+ *  Cap height ≈ 72 % of em; 1 pt = 1/72 in.
+ */
+export function approxLetterHeightIn(fontSize: number): string {
+  return (fontSize * 0.72 / 72).toFixed(3);
 }
