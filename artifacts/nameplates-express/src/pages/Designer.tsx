@@ -669,9 +669,15 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
   const [draggingIdx,   setDraggingIdx]   = useState<number | null>(null);
   const [hoveredHandle, setHoveredHandle] = useState<number | null>(null);
 
+  // ── Pointer-event drag handlers ───────────────────────────────────────────
+  // All events flow through the SVG element.  setPointerCapture on the SVG
+  // guarantees that pointermove / pointerup / pointercancel fire here even
+  // when the cursor leaves the element — no window-level mouse listeners needed.
+
   function onHandlePointerDown(idx: number, e: React.PointerEvent) {
     e.preventDefault();
-    (e.target as Element).setPointerCapture(e.pointerId);
+    // Capture on the SVG so it receives all future pointer events for this drag.
+    svgRef.current?.setPointerCapture(e.pointerId);
     dragRef.current = {
       idx, startClientY: e.clientY, startClientX: e.clientX,
       startValues: [...segments], lastDelta: 0, dragDir: direction,
@@ -679,33 +685,43 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
     setDraggingIdx(idx);
   }
 
-  useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
-      if (!dragRef.current || !svgRef.current) return;
-      const { idx, startClientY, startClientX, startValues, dragDir } = dragRef.current;
-      const svgRect = svgRef.current.getBoundingClientRect();
-      let rawPctDelta: number;
-      if (dragDir === "horizontal") {
-        const svgDeltaY = (e.clientY - startClientY) * (VH / svgRect.height);
-        rawPctDelta = (svgDeltaY / availH) * 100;
-      } else {
-        const svgDeltaX = (e.clientX - startClientX) * (VW / svgRect.width);
-        rawPctDelta = (svgDeltaX / availColW) * 100;
-      }
-      const snappedDelta = snap(rawPctDelta);
-      if (snappedDelta === dragRef.current.lastDelta) return;
-      dragRef.current.lastDelta = snappedDelta;
-      const moved = moveDivider(startValues, idx, snappedDelta);
-      onSegmentsChange(moved);
+  function onSvgPointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (!dragRef.current || !svgRef.current) return;
+    const { idx, startClientY, startClientX, startValues, dragDir } = dragRef.current;
+    const svgRect = svgRef.current.getBoundingClientRect();
+    let rawPctDelta: number;
+    if (dragDir === "horizontal") {
+      const svgDeltaY = (e.clientY - startClientY) * (VH / svgRect.height);
+      rawPctDelta = (svgDeltaY / availH) * 100;
+    } else {
+      const svgDeltaX = (e.clientX - startClientX) * (VW / svgRect.width);
+      rawPctDelta = (svgDeltaX / availColW) * 100;
     }
-    function onMouseUp() { dragRef.current = null; setDraggingIdx(null); }
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup",   onMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup",   onMouseUp);
-    };
-  }, [VH, VW, availH, availColW, onSegmentsChange]);
+    const snappedDelta = snap(rawPctDelta);
+    if (snappedDelta === dragRef.current.lastDelta) return;
+    dragRef.current.lastDelta = snappedDelta;
+    onSegmentsChange(moveDivider(startValues, idx, snappedDelta));
+  }
+
+  function stopDrag(e: React.PointerEvent<SVGSVGElement>) {
+    if (!dragRef.current) return;
+    svgRef.current?.releasePointerCapture(e.pointerId);
+    dragRef.current = null;
+    setDraggingIdx(null);
+  }
+
+  // Escape key cancels an in-progress drag and restores the original segment values.
+  useEffect(() => {
+    function onKeyDown(ev: KeyboardEvent) {
+      if (ev.key === "Escape" && dragRef.current) {
+        onSegmentsChange([...dragRef.current.startValues]);
+        dragRef.current = null;
+        setDraggingIdx(null);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onSegmentsChange]);
 
   const rects = zones.map((zone) => ({
     zone,
@@ -717,7 +733,10 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
 
   return (
     <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
-      style={{ width: "100%", height: "100%", maxWidth: `${VW}px`, display: "block", userSelect: "none" }}
+      onPointerMove={onSvgPointerMove}
+      onPointerUp={stopDrag}
+      onPointerCancel={stopDrag}
+      style={{ width: "100%", height: "100%", maxWidth: `${VW}px`, display: "block", userSelect: "none", touchAction: "none" }}
       preserveAspectRatio="xMidYMid meet">
 
       <defs>
