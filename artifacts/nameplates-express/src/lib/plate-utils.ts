@@ -33,6 +33,7 @@ export interface CartItem {
   lineConfigs: ZoneConfigs;
   dividers: DividerConfig[];
   addedAt: number;
+  color?: string;   // anodization color id (e.g. "black", "red") — undefined = "black"
   batchId?: string; // links items from the same CSV import
 }
 

@@ -5,9 +5,11 @@
  * it simulates a successful payment after a short delay.
  */
 import { useState } from "react";
-import { ArrowLeft, MapPin, User, ShoppingCart, AlertTriangle } from "lucide-react";
+import { ArrowLeft, MapPin, User, ShoppingCart, AlertTriangle, Receipt } from "lucide-react";
 import PlateFinalPreview from "@/components/PlateFinalPreview";
 import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
+import { useAdmin } from "@/context/AdminContext";
+import { DEFAULT_COLOR_PALETTE } from "@/lib/admin-store";
 import type { GuestInfo } from "./CheckoutGuest";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -40,6 +42,19 @@ function AddrLines({ lines }: { lines: (string | undefined)[] }) {
 
 export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Props) {
   const [busy, setBusy] = useState(false);
+  const { sizes } = useAdmin();
+
+  // Pricing
+  const subtotal = cart.reduce((sum, item) => {
+    const as = sizes.find(s => s.id === item.size.id);
+    return sum + (as?.basePrice ?? 0);
+  }, 0);
+  const anyPriced = cart.some(item => sizes.find(s => s.id === item.size.id));
+
+  function colorLabel(colorId: string | undefined): string {
+    const id = colorId ?? "black";
+    return DEFAULT_COLOR_PALETTE.find(c => c.id === id)?.label ?? id;
+  }
 
   function handlePayPal() {
     setBusy(true);
@@ -110,6 +125,43 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
               })}
             </div>
           </section>
+
+          {/* ── Order summary / pricing ── */}
+          {anyPriced && (
+            <section className="rounded border border-slate-700 bg-slate-800/40 px-5 py-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Receipt size={13} className="text-blue-400" />
+                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">Order Summary</h2>
+              </div>
+              <div className="space-y-2">
+                {cart.map((item, idx) => {
+                  const as = sizes.find(s => s.id === item.size.id);
+                  const price = as?.basePrice;
+                  return (
+                    <div key={item.id} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">
+                        Item {idx + 1} — {item.size.label}
+                        {item.color && item.color !== "black" && (
+                          <span className="ml-1 text-slate-500">· {colorLabel(item.color)}</span>
+                        )}
+                      </span>
+                      <span className="text-slate-200 font-medium">
+                        {price !== undefined ? `$${price.toFixed(2)}` : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="pt-2 mt-2 border-t border-slate-700 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-300">Estimated Total</span>
+                  <span className="text-base font-bold text-slate-100">${subtotal.toFixed(2)}</span>
+                </div>
+              </div>
+              {cart.length >= 10 && (
+                <p className="mt-2 text-xs text-blue-400">Quantity discount may apply — confirmed before any charge.</p>
+              )}
+              <p className="mt-1 text-xs text-slate-500">Base pricing. Final amount confirmed on invoice before payment.</p>
+            </section>
+          )}
 
           {/* ── Shipping / billing ── */}
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">

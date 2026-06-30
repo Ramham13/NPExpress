@@ -5,6 +5,8 @@ import {
   defaultZoneConfig, approxLetterHeightIn,
   type TagSize, type Template, type TextZone, type ZoneConfigs, type ZoneConfig,
 } from "@/data/templates";
+import { useAdmin } from "@/context/AdminContext";
+import { DEFAULT_COLOR_PALETTE } from "@/lib/admin-store";
 import {
   SVG_VW, PAD_RATIO, STEP,
   H_TOP, H_BOT, H_GAP, V_TOP, V_BOT, V_LEFT, V_RIGHT, V_GAP,
@@ -32,10 +34,14 @@ type AppView =
   | "quote"   | "quote-confirmed";
 
 export default function Designer() {
+  // ── Admin-managed sizes + selected color ─────────────────────────────────
+  const { sizes, activeSizes } = useAdmin();
+
   // ── Top-level: cart + app view ───────────────────────────────────────────
   const [cart, setCart]           = useState<CartItem[]>([]);
   const [appView, setAppView]     = useState<AppView>("design");
   const [selectedSize, setSelectedSize] = useState<TagSize | null>(null);
+  const [selectedColor, setSelectedColor] = useState<string>("black");
 
   // ── Checkout state ───────────────────────────────────────────────────────
   const [guestInfo,      setGuestInfo]      = useState<GuestInfo>(blankGuestInfo());
@@ -79,6 +85,11 @@ export default function Designer() {
     ? TEMPLATES.filter((t) => t.compatibleSizes.includes(selectedSize.id))
     : [];
 
+  // Admin-managed color options for the selected size
+  const adminSizeData = selectedSize ? sizes.find(s => s.id === selectedSize.id) : null;
+  const availableColors = adminSizeData?.colors.filter(c => c.enabled) ?? [];
+  const selectedColorLabel = availableColors.find(c => c.id === selectedColor)?.label ?? "Black";
+
   // ── Cart helpers ─────────────────────────────────────────────────────────
   function addSingleToCart() {
     if (!selectedSize || hasOverflow) return;
@@ -88,6 +99,7 @@ export default function Designer() {
       direction, heights, widths,
       lineConfigs: JSON.parse(JSON.stringify(lineConfigs)),
       dividers: JSON.parse(JSON.stringify(dividers)),
+      color: selectedColor,
       addedAt: Date.now(),
     };
     setCart((prev) => [...prev, item]);
@@ -117,6 +129,10 @@ export default function Designer() {
     setHeights([100]); setWidths([100]);
     setLineConfigs({ line1: defaultZoneConfig() });
     setDividers([]);
+    // reset to first available enabled color for this size (default: black)
+    const adminSize = sizes.find(s => s.id === size.id);
+    const firstColor = adminSize?.colors.find(c => c.enabled)?.id ?? "black";
+    setSelectedColor(firstColor);
   }
 
   function selectBlank() { setActiveTemplateId(null); }
@@ -216,9 +232,9 @@ export default function Designer() {
         }
 
         // Size must be a known size
-        const knownSize = TAG_SIZES.find((s) => s.id === data.size.id);
+        const knownSize = (sizes.find((s) => s.id === data.size.id) ?? TAG_SIZES.find((s) => s.id === data.size.id)) as TagSize | undefined;
         if (!knownSize) {
-          setImportError(`Unknown size id "${data.size.id}". Valid sizes: ${TAG_SIZES.map(s => s.id).join(", ")}.`);
+          setImportError(`Unknown size id "${data.size.id}". Add this size in admin settings or use a different layout file.`);
           return;
         }
 
@@ -338,6 +354,7 @@ export default function Designer() {
   if (!selectedSize) {
     return (
       <SizePicker
+        sizes={activeSizes}
         onPick={pickSize}
         cartCount={cart.length}
         onCartClick={() => setAppView("cart")}
@@ -361,7 +378,7 @@ export default function Designer() {
           </div>
           <div className="flex items-center gap-3">
             <span className="font-mono text-xs text-slate-300 bg-slate-700 rounded px-2 py-0.5">
-              {selectedSize.label} · Landscape · Black Anodized Aluminum
+              {selectedSize.label} · Landscape · {selectedColorLabel} Anodized Aluminum
             </span>
             <button data-testid="button-change-size" onClick={() => setSelectedSize(null)}
               className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors whitespace-nowrap">
@@ -424,6 +441,7 @@ export default function Designer() {
               lineConfigs={lineConfigs}
               dividers={dividers}
               direction={direction}
+              colorId={selectedColor}
             />
           </div>
         </div>
@@ -442,6 +460,37 @@ export default function Designer() {
               e.target.value = "";
             }}
           />
+          {/* ── Plate color selector (only when multiple colors available) ── */}
+          {availableColors.length > 1 && (
+            <div className="px-3 py-3 border-b border-border">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                Plate Color
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                {availableColors.map(color => (
+                  <button key={color.id} title={color.label}
+                    onClick={() => setSelectedColor(color.id)}
+                    className={`relative flex items-center justify-center w-7 h-7 rounded-full border-2 transition-all ${
+                      selectedColor === color.id
+                        ? "border-primary shadow-sm scale-110"
+                        : "border-transparent hover:border-slate-500"
+                    }`}
+                    style={{ backgroundColor: color.hex }}>
+                    {selectedColor === color.id && (
+                      <svg width="10" height="10" viewBox="0 0 10 10">
+                        <path d="M2 5l2 2 4-4" stroke="white" strokeWidth="1.8"
+                          fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+                <span className="text-xs text-muted-foreground">
+                  {selectedColorLabel}
+                </span>
+              </div>
+            </div>
+          )}
+
           <CustomizePanel
             zones={zones} lineConfigs={lineConfigs}
             numSegments={numSegments} segments={segments}
@@ -468,7 +517,8 @@ export default function Designer() {
 
 // ─── Size picker ──────────────────────────────────────────────────────────────
 
-function SizePicker({ onPick, cartCount, onCartClick }: {
+function SizePicker({ sizes, onPick, cartCount, onCartClick }: {
+  sizes: TagSize[];
   onPick: (s: TagSize) => void;
   cartCount: number;
   onCartClick: () => void;
@@ -501,27 +551,34 @@ function SizePicker({ onPick, cartCount, onCartClick }: {
         <p className="mb-8 text-sm text-muted-foreground">
           All nameplates are landscape orientation. Select a size to open the designer.
         </p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {TAG_SIZES.map((size) => {
-            const aspect = size.height / size.width;
-            const thumbH = Math.min(48, Math.max(14, Math.round(88 * aspect)));
-            const thumbW = Math.round(thumbH / aspect);
-            return (
-              <button key={size.id} data-testid={`button-size-${size.id}`} onClick={() => onPick(size)}
-                className="group flex flex-col items-center gap-3 rounded border border-border bg-card p-4 text-center transition-all hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary">
-                <div className="rounded-sm flex-shrink-0" style={{
-                  width: thumbW, height: thumbH,
-                  background: "linear-gradient(145deg, hsl(220 20% 18%), hsl(220 15% 10%))",
-                  border: "2px solid hsl(220 20% 30%)",
-                }} />
-                <p className="font-mono text-sm font-bold text-foreground group-hover:text-primary transition-colors">{size.label}</p>
-              </button>
-            );
-          })}
-        </div>
+        {sizes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
+            <p className="text-base font-semibold">No sizes available</p>
+            <p className="text-sm">An administrator needs to activate at least one size.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {sizes.map((size) => {
+              const aspect = size.height / size.width;
+              const thumbH = Math.min(48, Math.max(14, Math.round(88 * aspect)));
+              const thumbW = Math.round(thumbH / aspect);
+              return (
+                <button key={size.id} data-testid={`button-size-${size.id}`} onClick={() => onPick(size)}
+                  className="group flex flex-col items-center gap-3 rounded border border-border bg-card p-4 text-center transition-all hover:border-primary hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary">
+                  <div className="rounded-sm flex-shrink-0" style={{
+                    width: thumbW, height: thumbH,
+                    background: "linear-gradient(145deg, hsl(220 20% 18%), hsl(220 15% 10%))",
+                    border: "2px solid hsl(220 20% 30%)",
+                  }} />
+                  <p className="font-mono text-sm font-bold text-foreground group-hover:text-primary transition-colors">{size.label}</p>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <footer className="mt-auto border-t border-border py-4 text-center text-xs text-muted-foreground">
-        Nameplates Express &bull; Anodized Aluminum &bull; Black
+        Nameplates Express &bull; Anodized Aluminum
       </footer>
     </div>
   );

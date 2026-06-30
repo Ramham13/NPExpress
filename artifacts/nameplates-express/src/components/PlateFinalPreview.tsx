@@ -13,6 +13,7 @@ import {
   computeTextLayout, dividerDashArray,
   type DividerConfig, type Direction,
 } from "@/lib/plate-utils";
+import { getPlateStyle } from "@/lib/admin-store";
 
 interface Props {
   size: TagSize;
@@ -20,18 +21,22 @@ interface Props {
   lineConfigs: ZoneConfigs;
   dividers: DividerConfig[];
   direction: Direction;
+  colorId?: string;     // anodization color id, e.g. "black" | "red" | "blue" | …
   uid?: string;         // unique prefix for SVG defs IDs — use when rendering many instances
   className?: string;
 }
 
 export default function PlateFinalPreview({
-  size, zones, lineConfigs, dividers, direction, uid = "pfp", className,
+  size, zones, lineConfigs, dividers, direction, colorId, uid = "pfp", className,
 }: Props) {
   const VW  = SVG_VW;
   const VH  = Math.round(VW * size.height / size.width);
   const PAD = VW * PAD_RATIO;
   const innerW = VW - PAD * 2;
   const innerH = VH - PAD * 2;
+
+  // Color-aware plate style
+  const cs = getPlateStyle(colorId ?? "black");
 
   // Pre-compute zone rectangles
   const rects = zones.map((zone) => ({
@@ -55,12 +60,12 @@ export default function PlateFinalPreview({
     >
       <defs>
         <linearGradient id={idBg} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%"   stopColor="hsl(220, 18%, 20%)" />
-          <stop offset="55%"  stopColor="hsl(220, 15%, 11%)" />
-          <stop offset="100%" stopColor="hsl(220, 18%, 17%)" />
+          <stop offset="0%"   stopColor={cs.gA} />
+          <stop offset="55%"  stopColor={cs.gB} />
+          <stop offset="100%" stopColor={cs.gC} />
         </linearGradient>
         <linearGradient id={idSheen} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stopColor="rgba(255,255,255,0.065)" />
+          <stop offset="0%"  stopColor={cs.sheen} />
           <stop offset="45%" stopColor="rgba(255,255,255,0)" />
         </linearGradient>
         <clipPath id={idClip}>
@@ -76,7 +81,7 @@ export default function PlateFinalPreview({
         x={1.5} y={1.5} width={VW - 3} height={VH - 3}
         rx={VW * 0.0072}
         fill="none"
-        stroke="hsl(220, 22%, 38%)"
+        stroke={cs.border}
         strokeWidth={VW * 0.003}
       />
 
