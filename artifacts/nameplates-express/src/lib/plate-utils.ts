@@ -321,7 +321,18 @@ export function computeOverflowMap(
       // right-aligned: text ends at zx+zw, starts at zx+zw-maxLineW
       plateBoundaryOverflowW = (zx + zw - maxLineW) < 0;
     }
-    const plateBoundaryOverflowH = (zy + totalH) > innerH;
+    // Vertical: compute actual rendered text block top edge (mirrors computeTextLayout vAlign logic)
+    const vAlign = cfg.vAlign ?? "center";
+    let textTop: number;
+    if (vAlign === "top") {
+      textTop = zy;
+    } else if (vAlign === "bottom") {
+      textTop = zy + zh - totalH;
+    } else {
+      textTop = zy + (zh - totalH) / 2; // center (default)
+    }
+    const textBottom = textTop + totalH;
+    const plateBoundaryOverflowH = textTop < 0 || textBottom > innerH;
     const plateBoundaryOverflow  = plateBoundaryOverflowW || plateBoundaryOverflowH;
 
     result[zone.id] = {

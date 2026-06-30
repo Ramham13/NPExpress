@@ -1201,23 +1201,42 @@ function ZoneEditor({ zone, idx, segmentPct, showSegmentControl, direction, cfg,
           <textarea data-testid={`input-zone-${zone.id}`} rows={2}
             value={cfg.text} onChange={(e) => onUpdate({ text: e.target.value })}
             placeholder={zone.placeholder}
-            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none resize-none bg-background ${overflows ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary"}`}
+            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none resize-none bg-background ${
+              plateOverflow ? "border-red-500/60 focus:border-red-500"
+                : segOverflow ? "border-amber-500/60 focus:border-amber-500"
+                : "border-border focus:border-primary"
+            }`}
             style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }} />
         ) : (
           <input data-testid={`input-zone-${zone.id}`} type="text"
             value={cfg.text} onChange={(e) => onUpdate({ text: e.target.value })}
             placeholder={zone.placeholder}
-            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none bg-background ${overflows ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary"}`}
+            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none bg-background ${
+              plateOverflow ? "border-red-500/60 focus:border-red-500"
+                : segOverflow ? "border-amber-500/60 focus:border-amber-500"
+                : "border-border focus:border-primary"
+            }`}
             style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }} />
         )}
 
-        {overflows && (
+        {/* Plate boundary error (hard block) */}
+        {plateOverflow && (
           <div className="flex items-start gap-1.5 rounded bg-red-500/10 border border-red-500/30 px-2 py-1.5">
             <AlertTriangle size={11} className="text-red-500 flex-shrink-0 mt-0.5" />
             <p className="text-[10px] text-red-500 leading-snug">
-              {ov?.widthOverflow && !ov?.heightOverflow && "Text is too wide. Shorten it, lower font size, or enable word wrap."}
-              {ov?.heightOverflow && !ov?.widthOverflow && "Text is too tall. Shorten it, lower font size, or increase zone size."}
-              {ov?.widthOverflow && ov?.heightOverflow  && "Text overflows both dimensions. Shorten text or lower font size."}
+              Text extends past the nameplate edge. Reduce font size or shorten text.
+            </p>
+          </div>
+        )}
+
+        {/* Segment overflow warning (non-blocking) */}
+        {segOverflow && !plateOverflow && (
+          <div className="flex items-start gap-1.5 rounded bg-amber-500/10 border border-amber-500/30 px-2 py-1.5">
+            <AlertTriangle size={11} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-[10px] text-amber-600 leading-snug">
+              {ov?.widthOverflow && !ov?.heightOverflow && "Text overflows its segment width — may overlap adjacent zones."}
+              {ov?.heightOverflow && !ov?.widthOverflow && "Text overflows its segment height — may overlap adjacent zones."}
+              {ov?.widthOverflow && ov?.heightOverflow  && "Text overflows segment width and height — may overlap adjacent zones."}
             </p>
           </div>
         )}
