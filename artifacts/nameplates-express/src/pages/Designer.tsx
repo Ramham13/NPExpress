@@ -1,185 +1,40 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { RotateCcw, Bold, Italic, WrapText, AlertTriangle, Rows3, Columns3 } from "lucide-react";
+import { RotateCcw, Bold, Italic, WrapText, AlertTriangle, Rows3, Columns3, ShoppingCart } from "lucide-react";
 import {
   TAG_SIZES, TEMPLATES, FONT_OPTIONS, FONT_SIZE_OPTIONS,
   defaultZoneConfig, approxLetterHeightIn,
   type TagSize, type Template, type TextZone, type ZoneConfigs, type ZoneConfig,
 } from "@/data/templates";
+import {
+  SVG_VW, PAD_RATIO, STEP,
+  H_TOP, H_BOT, H_GAP, V_TOP, V_BOT, V_LEFT, V_RIGHT, V_GAP,
+  snap, defaultSegments, heightsFromTemplate, adjustOne, moveDivider,
+  defaultDivider, defaultDividers,
+  computeHZones, computeVZones, computeOverflowMap, computeTextLayout, dividerDashArray,
+  type Direction, type DividerConfig, type DividerStyle, type OverflowInfo, type CartItem,
+} from "@/lib/plate-utils";
+import PlateFinalPreview from "@/components/PlateFinalPreview";
+import CsvView from "@/pages/CsvView";
+import CartView from "@/pages/CartView";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const STEP = 5;
-const MIN_H = 10;
-const SVG_VW = 1000;
-const PAD_RATIO  = 0.018;
+// Inner padding used only in the editor preview (decorative divider line inset)
 const IPAD_RATIO = 0.008;
-
-// Zone geometry — horizontal mode
-const H_TOP = 5, H_BOT = 5, H_GAP = 2;
-// Zone geometry — vertical mode
-const V_TOP = 5, V_BOT = 5, V_LEFT = 4, V_RIGHT = 4, V_GAP = 1;
-
-// ─── Divider / overflow types ─────────────────────────────────────────────────
-type Direction     = "horizontal" | "vertical";
-type DividerStyle  = "solid" | "dotted" | "dashed";
-interface DividerConfig { enabled: boolean; style: DividerStyle; }
-interface OverflowInfo  { widthOverflow: boolean; heightOverflow: boolean; overflows: boolean; }
-
-const defaultDivider  = (): DividerConfig  => ({ enabled: false, style: "solid" });
-const defaultDividers = (n: number): DividerConfig[] =>
-  Array.from({ length: Math.max(0, n - 1) }, defaultDivider);
-
-// ─── Segment helpers (shared for heights and widths) ─────────────────────────
-const snap = (v: number) => Math.round(v / STEP) * STEP;
-
-function defaultSegments(n: number): number[] {
-  const base = snap(Math.floor(100 / n / STEP) * STEP);
-  const arr  = Array(n).fill(base);
-  let diff   = 100 - arr.reduce((a: number, b: number) => a + b, 0);
-  for (let i = arr.length - 1; i >= 0 && diff !== 0; i--) {
-    const add = Math.sign(diff) * STEP; arr[i] += add; diff -= add;
-  }
-  return arr;
-}
-
-function heightsFromTemplate(zones: TextZone[]): number[] {
-  const total = zones.reduce((s, z) => s + z.heightPct, 0);
-  const raw   = zones.map((z) => snap((z.heightPct / total) * 100));
-  const diff  = 100 - raw.reduce((a, b) => a + b, 0);
-  const biggest = raw.indexOf(Math.max(...raw));
-  raw[biggest] = Math.max(MIN_H, raw[biggest] + diff);
-  return raw.map((v) => Math.max(MIN_H, v));
-}
-
-/** Adjust one segment by ±STEP, stealing from / giving to the most generous peer. */
-function adjustOne(segs: number[], idx: number, delta: number): number[] {
-  const n = segs.length;
-  const proposed = segs[idx] + delta;
-  if (proposed < MIN_H || proposed > 100 - MIN_H * (n - 1)) return segs;
-  const others = [...Array(n).keys()].filter((i) => i !== idx);
-  if (delta > 0) {
-    const donor = others.filter((i) => segs[i] - STEP >= MIN_H).sort((a, b) => segs[b] - segs[a])[0];
-    if (donor === undefined) return segs;
-    const next = [...segs]; next[idx] += STEP; next[donor] -= STEP; return next;
-  } else {
-    const recipient = others.sort((a, b) => segs[a] - segs[b])[0];
-    const next = [...segs]; next[idx] -= STEP; next[recipient] += STEP; return next;
-  }
-}
-
-/** Move the divider between segs[idx] and segs[idx+1]; returns same ref if impossible. */
-function moveDivider(segs: number[], idx: number, deltaPct: number): number[] {
-  const combined = segs[idx] + segs[idx + 1];
-  const newI      = Math.max(MIN_H, Math.min(combined - MIN_H, segs[idx] + deltaPct));
-  const snappedI  = snap(newI);
-  const snappedJ  = combined - snappedI;
-  if (snappedJ < MIN_H) return segs;
-  const next = [...segs]; next[idx] = snappedI; next[idx + 1] = snappedJ; return next;
-}
-
-// ─── Zone geometry ────────────────────────────────────────────────────────────
-
-/** Horizontal layout: stacked zones top-to-bottom. */
-function computeHZones(heights: number[]): TextZone[] {
-  const n = heights.length;
-  const avail = 100 - H_TOP - H_BOT - H_GAP * (n - 1);
-  let yOff = H_TOP;
-  return heights.map((h, i) => {
-    const hPct = (h / 100) * avail;
-    const zone: TextZone = {
-      id: `line${i + 1}`,
-      label: n === 1 ? "Text" : `Line ${i + 1}`,
-      placeholder: n === 1 ? "YOUR TEXT HERE" : `LINE ${i + 1}`,
-      xPct: V_LEFT, yPct: yOff, widthPct: 100 - V_LEFT - V_RIGHT, heightPct: hPct,
-      align: "center" as const,
-    };
-    yOff += hPct + H_GAP;
-    return zone;
-  });
-}
-
-/** Vertical layout: side-by-side columns left-to-right. */
-function computeVZones(widths: number[]): TextZone[] {
-  const n = widths.length;
-  const avail = 100 - V_LEFT - V_RIGHT - V_GAP * (n - 1); // % of innerW
-  const HAND_LABELS = ["HAND", "OFF", "AUTO", "COL 4", "COL 5"];
-  let xOff = V_LEFT;
-  return widths.map((w, i) => {
-    const wPct = (w / 100) * avail;
-    const zone: TextZone = {
-      id: `line${i + 1}`,
-      label: n === 1 ? "Text" : `Col ${i + 1}`,
-      placeholder: n === 1 ? "YOUR TEXT HERE" : HAND_LABELS[i] ?? `COL ${i + 1}`,
-      xPct: xOff, yPct: V_TOP, widthPct: wPct, heightPct: 100 - V_TOP - V_BOT,
-      align: "center" as const,
-    };
-    xOff += wPct + V_GAP;
-    return zone;
-  });
-}
-
-// ─── Word-wrap + overflow ─────────────────────────────────────────────────────
-
-function wrapWords(text: string, fontSpec: string, maxW: number): string[] {
-  const canvas = document.createElement("canvas");
-  const ctx    = canvas.getContext("2d")!;
-  ctx.font     = fontSpec;
-  const result: string[] = [];
-  for (const para of text.split("\n")) {
-    if (!para.trim()) { result.push(""); continue; }
-    let current = "";
-    for (const word of para.split(" ")) {
-      const test = current ? `${current} ${word}` : word;
-      if (ctx.measureText(test).width <= maxW) { current = test; }
-      else { if (current) result.push(current); current = word; }
-    }
-    if (current) result.push(current);
-  }
-  return result.length ? result : [""];
-}
-
-function computeOverflowMap(
-  zones: TextZone[], lineConfigs: ZoneConfigs, size: TagSize,
-): Record<string, OverflowInfo> {
-  const VW = SVG_VW;
-  const VH = Math.round(VW * size.height / size.width);
-  const PAD = VW * PAD_RATIO, INNER_PAD = VW * IPAD_RATIO;
-  const innerW = VW - PAD * 2, innerH = VH - PAD * 2;
-  const canvas = document.createElement("canvas");
-  const ctx    = canvas.getContext("2d")!;
-  const result: Record<string, OverflowInfo> = {};
-  for (const zone of zones) {
-    const cfg  = lineConfigs[zone.id] ?? defaultZoneConfig();
-    const text = cfg.text.trim();
-    if (!text) { result[zone.id] = { widthOverflow: false, heightOverflow: false, overflows: false }; continue; }
-    const zh   = (zone.heightPct / 100) * innerH;
-    const zw   = (zone.widthPct  / 100) * innerW;
-    // No padding — text goes right to zone edge, so overflow limit = full zone width
-    const availW = zw;
-    // pt → SVG px: 1 pt = 1/72 in; plate is size.width in = VW SVG px.
-    // No zone-height scaling — font size is absolute and controlled only by the user.
-    const svgFontSize = Math.max(4, cfg.fontSize / 72 * (VW / size.width));
-    const lineH       = svgFontSize * 1.28;
-    const font        = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
-    const fontSpec    = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgFontSize}px ${font.family}`;
-    ctx.font = fontSpec;
-    const renderLines  = cfg.wordWrap ? wrapWords(text, fontSpec, availW) : text.split("\n");
-    const maxLineW     = Math.max(...renderLines.map((l) => ctx.measureText(l || " ").width));
-    const totalH       = renderLines.length * lineH;
-    const widthOverflow  = !cfg.wordWrap && maxLineW > availW;
-    const heightOverflow = totalH > zh;
-    result[zone.id] = { widthOverflow, heightOverflow, overflows: widthOverflow || heightOverflow };
-  }
-  return result;
-}
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
+type AppView = "design" | "csv" | "cart";
+
 export default function Designer() {
+  // ── Top-level: cart + app view ───────────────────────────────────────────
+  const [cart, setCart]           = useState<CartItem[]>([]);
+  const [appView, setAppView]     = useState<AppView>("design");
   const [selectedSize, setSelectedSize] = useState<TagSize | null>(null);
+
+  // ── Design state ────────────────────────────────────────────────────────
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
-  const [direction, setDirection]  = useState<Direction>("horizontal");
-  const [heights,   setHeights]    = useState<number[]>([100]);
-  const [widths,    setWidths]     = useState<number[]>([100]);
+  const [direction, setDirection]   = useState<Direction>("horizontal");
+  const [heights,   setHeights]     = useState<number[]>([100]);
+  const [widths,    setWidths]       = useState<number[]>([100]);
   const [lineConfigs, setLineConfigs] = useState<ZoneConfigs>({ line1: defaultZoneConfig() });
   const [dividers,    setDividers]   = useState<DividerConfig[]>([]);
 
@@ -201,6 +56,37 @@ export default function Designer() {
     ? TEMPLATES.filter((t) => t.compatibleSizes.includes(selectedSize.id))
     : [];
 
+  // ── Cart helpers ─────────────────────────────────────────────────────────
+  function addSingleToCart() {
+    if (!selectedSize || hasOverflow) return;
+    const item: CartItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      size: selectedSize,
+      direction, heights, widths,
+      lineConfigs: JSON.parse(JSON.stringify(lineConfigs)),
+      dividers: JSON.parse(JSON.stringify(dividers)),
+      addedAt: Date.now(),
+    };
+    setCart((prev) => [...prev, item]);
+  }
+
+  function addBatchToCart(items: Omit<CartItem, "id" | "addedAt" | "batchId">[]) {
+    const batchId = `batch-${Date.now()}`;
+    const cartItems: CartItem[] = items.map((item, i) => ({
+      ...item,
+      id: `${batchId}-${i}`,
+      addedAt: Date.now(),
+      batchId,
+    }));
+    setCart((prev) => [...prev, ...cartItems]);
+    setAppView("design");
+  }
+
+  function removeFromCart(id: string) {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  // ── Size / template / design actions ────────────────────────────────────
   function pickSize(size: TagSize) {
     setSelectedSize(size);
     setActiveTemplateId(null);
@@ -228,7 +114,6 @@ export default function Designer() {
   function changeDirection(dir: Direction) {
     setDirection(dir);
     setActiveTemplateId(null);
-    // Reset dividers to match the segment count for that direction
     const n = dir === "horizontal" ? heights.length : widths.length;
     setDividers(defaultDividers(n));
   }
@@ -262,10 +147,47 @@ export default function Designer() {
     setDividers((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next; });
   }
 
-  if (!selectedSize) return <SizePicker onPick={pickSize} />;
+  // ── Full-screen views ────────────────────────────────────────────────────
+  if (appView === "cart") {
+    return (
+      <CartView
+        cart={cart}
+        onBack={() => setAppView("design")}
+        onRemove={removeFromCart}
+        onClearAll={() => setCart([])}
+      />
+    );
+  }
 
+  if (appView === "csv" && selectedSize) {
+    return (
+      <CsvView
+        size={selectedSize}
+        direction={direction}
+        heights={heights}
+        widths={widths}
+        baseLineConfigs={lineConfigs}
+        dividers={dividers}
+        onAccept={addBatchToCart}
+        onBack={() => setAppView("design")}
+      />
+    );
+  }
+
+  if (!selectedSize) {
+    return (
+      <SizePicker
+        onPick={pickSize}
+        cartCount={cart.length}
+        onCartClick={() => setAppView("cart")}
+      />
+    );
+  }
+
+  // ── Main editor view ─────────────────────────────────────────────────────
   return (
     <div className="flex flex-col bg-background" style={{ height: "100dvh" }}>
+      {/* Header */}
       <header className="bg-[hsl(220_25%_12%)] text-white border-b border-slate-700 flex-shrink-0">
         <div className="px-4 py-2.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 flex-shrink-0">
@@ -284,31 +206,84 @@ export default function Designer() {
               className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors whitespace-nowrap">
               <RotateCcw size={11} /> Change Size
             </button>
+            {/* Cart badge */}
+            <button
+              onClick={() => setAppView("cart")}
+              className="relative flex items-center gap-1.5 text-xs text-slate-300 hover:text-white transition-colors"
+            >
+              <ShoppingCart size={15} />
+              {cart.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-black text-white">
+                  {cart.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
       </header>
 
+      {/* Three-panel layout */}
       <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
+        {/* Left: templates */}
         <aside className="lg:w-44 xl:w-52 flex-shrink-0 border-b lg:border-b-0 lg:border-r border-border overflow-y-auto bg-muted/20" style={{ minHeight: 0 }}>
           <TemplatePanel size={selectedSize} templates={compatibleTemplates}
             activeTemplateId={activeTemplateId} onBlank={selectBlank} onTemplate={selectTemplate} />
         </aside>
 
-        <div className="flex-1 flex items-center justify-center overflow-hidden bg-[hsl(220_20%_8%)] p-4 lg:p-8" style={{ minHeight: "180px", minWidth: 0 }}>
-          <PlatePreview size={selectedSize} zones={zones} lineConfigs={lineConfigs}
-            segments={segments} direction={direction} dividers={dividers}
-            overflowMap={overflowMap} onSegmentsChange={handleSegmentsChange} />
+        {/* Center: editor preview + final preview */}
+        <div
+          className="flex-1 overflow-y-auto bg-[hsl(220_20%_8%)] px-4 py-5 lg:px-8 lg:py-6"
+          style={{ minHeight: "180px", minWidth: 0 }}
+        >
+          <div className="mx-auto" style={{ maxWidth: "820px" }}>
+            {/* ── Editor preview ── */}
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-2 select-none">
+              Editor Preview
+            </p>
+            <PlatePreview
+              size={selectedSize} zones={zones} lineConfigs={lineConfigs}
+              segments={segments} direction={direction} dividers={dividers}
+              overflowMap={overflowMap} onSegmentsChange={handleSegmentsChange}
+            />
+
+            {/* ── Separator ── */}
+            <div className="my-6 flex items-center gap-3">
+              <div className="flex-1 border-t border-slate-700" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 select-none">
+                Final Product Preview
+              </span>
+              <div className="flex-1 border-t border-slate-700" />
+            </div>
+
+            {/* ── Final product preview ── */}
+            <PlateFinalPreview
+              uid="designer-fp"
+              size={selectedSize}
+              zones={zones}
+              lineConfigs={lineConfigs}
+              dividers={dividers}
+              direction={direction}
+            />
+          </div>
         </div>
 
+        {/* Right: customize */}
         <aside className="lg:w-72 xl:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-border overflow-y-auto bg-background" style={{ minHeight: 0 }}>
-          <CustomizePanel zones={zones} lineConfigs={lineConfigs}
+          <CustomizePanel
+            zones={zones} lineConfigs={lineConfigs}
             numSegments={numSegments} segments={segments}
             direction={direction} dividers={dividers}
             overflowMap={overflowMap} hasOverflow={hasOverflow}
+            cartCount={cart.length}
             onChangeDirection={changeDirection}
             onChangeNumSegments={changeNumSegments}
             onAdjustSegment={adjustSegment}
-            onUpdateZone={updateZone} onUpdateDivider={updateDivider} />
+            onUpdateZone={updateZone}
+            onUpdateDivider={updateDivider}
+            onAddToCart={addSingleToCart}
+            onBulkCsv={() => setAppView("csv")}
+            onViewCart={() => setAppView("cart")}
+          />
         </aside>
       </div>
     </div>
@@ -317,17 +292,32 @@ export default function Designer() {
 
 // ─── Size picker ──────────────────────────────────────────────────────────────
 
-function SizePicker({ onPick }: { onPick: (s: TagSize) => void }) {
+function SizePicker({ onPick, cartCount, onCartClick }: {
+  onPick: (s: TagSize) => void;
+  cartCount: number;
+  onCartClick: () => void;
+}) {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="bg-[hsl(220_25%_12%)] text-white border-b border-slate-700">
-        <div className="px-4 py-3 flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded bg-primary">
-            <span className="text-xs font-black text-white">NX</span>
+        <div className="px-4 py-3 flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded bg-primary">
+              <span className="text-xs font-black text-white">NX</span>
+            </div>
+            <span className="text-sm font-bold tracking-tight">
+              Nameplates<span className="text-primary">Express</span>
+            </span>
           </div>
-          <span className="text-sm font-bold tracking-tight">
-            Nameplates<span className="text-primary">Express</span>
-          </span>
+          {cartCount > 0 && (
+            <button
+              onClick={onCartClick}
+              className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white transition-colors"
+            >
+              <ShoppingCart size={14} />
+              View Order ({cartCount})
+            </button>
+          )}
         </div>
       </header>
       <div className="mx-auto w-full max-w-2xl px-4 py-10">
@@ -412,14 +402,14 @@ function TemplatePanel({ size, templates, activeTemplateId, onBlank, onTemplate 
   );
 }
 
-// ─── Center: live SVG plate preview ──────────────────────────────────────────
+// ─── Center: live SVG plate preview (editor with handles) ─────────────────────
 
 type DragState = {
   idx: number;
   startClientY: number;
   startClientX: number;
   startValues: number[];
-  lastDelta: number;       // ← tracks last applied snapped delta to enable drag-back-to-origin
+  lastDelta: number;
   dragDir: Direction;
 };
 
@@ -431,11 +421,11 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
 }) {
   const VW = SVG_VW;
   const VH = Math.round(VW * size.height / size.width);
-  const PAD = VW * PAD_RATIO, INNER_PAD = VW * IPAD_RATIO;
+  const PAD      = VW * PAD_RATIO;
+  const INNER_PAD = VW * IPAD_RATIO;
   const innerW = VW - PAD * 2, innerH = VH - PAD * 2;
   const n = segments.length;
 
-  // Available dimension for proportional sizing (excluding margins + gaps)
   const hAvailPct = 100 - H_TOP - H_BOT - H_GAP * (n - 1);
   const vAvailPct = 100 - V_LEFT - V_RIGHT - V_GAP * (n - 1);
   const availH    = (hAvailPct / 100) * innerH;
@@ -461,7 +451,6 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
       if (!dragRef.current || !svgRef.current) return;
       const { idx, startClientY, startClientX, startValues, dragDir } = dragRef.current;
       const svgRect = svgRef.current.getBoundingClientRect();
-
       let rawPctDelta: number;
       if (dragDir === "horizontal") {
         const svgDeltaY = (e.clientY - startClientY) * (VH / svgRect.height);
@@ -470,22 +459,21 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
         const svgDeltaX = (e.clientX - startClientX) * (VW / svgRect.width);
         rawPctDelta = (svgDeltaX / availColW) * 100;
       }
-
       const snappedDelta = snap(rawPctDelta);
-      // Key fix: compare against lastDelta so drag-back-to-origin is always applied
       if (snappedDelta === dragRef.current.lastDelta) return;
       dragRef.current.lastDelta = snappedDelta;
-
       const moved = moveDivider(startValues, idx, snappedDelta);
       onSegmentsChange(moved);
     }
     function onMouseUp() { dragRef.current = null; setDraggingIdx(null); }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup",   onMouseUp);
-    return () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup",   onMouseUp);
+    };
   }, [VH, VW, availH, availColW, onSegmentsChange]);
 
-  // Pre-compute zone rects in SVG units
   const rects = zones.map((zone) => ({
     zone,
     zx: PAD + (zone.xPct      / 100) * innerW,
@@ -526,49 +514,23 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
 
       {/* Zone backgrounds + text */}
       {rects.map(({ zone, zx, zy, zw, zh }) => {
-        const cfg          = lineConfigs[zone.id] ?? defaultZoneConfig();
-        const font         = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
-        const displayText  = cfg.text || zone.placeholder;
+        const cfg         = lineConfigs[zone.id] ?? defaultZoneConfig();
         const isPlaceholder = !cfg.text;
-        // pt → SVG px: 1 pt = 1/72 in; plate is size.width in = VW SVG px.
-        // No zone-height scaling — font size is absolute and controlled only by the user.
-        const svgPt        = Math.max(4, cfg.fontSize / 72 * (VW / size.width));
-        const lineH        = svgPt * 1.28;
-        // No padding — text sits right at zone boundary.
-        const availTextW   = zw;
-        const fontSpec     = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
-        const lines        = (!isPlaceholder && cfg.wordWrap)
-          ? wrapWords(displayText, fontSpec, availTextW)
-          : displayText.split("\n");
-        const numLines     = lines.length;
+        const font        = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
+        const ov          = overflowMap[zone.id];
+        const overflows   = ov?.overflows ?? false;
 
-        // hAlign: anchor text at zone left/center/right edge
-        let textX: number, anchor: "start" | "middle" | "end";
-        if (cfg.hAlign === "left")       { textX = zx;            anchor = "start";  }
-        else if (cfg.hAlign === "right") { textX = zx + zw;       anchor = "end";    }
-        else                             { textX = zx + zw / 2;   anchor = "middle"; }
-
-        // vAlign: SVG text y = baseline.
-        //   cap height ≈ svgPt * 0.72 above baseline; descender ≈ svgPt * 0.28 below.
-        //   top:    first cap top at zy           → baseY = zy + svgPt * 0.72
-        //   bottom: last descender at zy+zh       → last baseY = zy + zh - svgPt * 0.28
-        //                                         → first baseY = last - (numLines-1)*lineH
-        //   center: center of text block at zone center
-        let baseY: number;
-        if (cfg.vAlign === "top") {
-          baseY = zy + svgPt * 0.72;
-        } else if (cfg.vAlign === "bottom") {
-          baseY = zy + zh - svgPt * 0.28 - (numLines - 1) * lineH;
-        } else {
-          // center: first baseline so cap-centers of all lines are centered on zy+zh/2
-          baseY = zy + zh / 2 - (numLines * lineH) / 2 + svgPt * 0.72;
-        }
-
-        const ov = overflowMap[zone.id];
-        const overflows = ov?.overflows ?? false;
+        // ── Alignment fix: dominantBaseline="hanging" → y = top of em square.
+        //    All positioning is in terms of the TEXT BLOCK TOP, not the baseline.
+        //    top    → firstLineY = zy
+        //    center → firstLineY = zy + (zh − blockH) / 2
+        //    bottom → firstLineY = zy + zh − blockH
+        //    No font-metric approximations needed.
+        const layout = computeTextLayout(cfg, zone, zx, zy, zw, zh, size, isPlaceholder);
 
         return (
           <g key={zone.id}>
+            {/* Zone background rect (editor only) */}
             <rect x={zx} y={zy} width={zw} height={zh}
               fill="hsl(215, 22%, 16%)"
               stroke={overflows ? "hsl(0, 84%, 58%)" : isPlaceholder ? "hsl(215, 22%, 32%)" : "hsl(215, 22%, 42%)"}
@@ -579,20 +541,33 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
               <rect x={zx} y={zy} width={zw} height={zh}
                 fill="rgba(239,68,68,0.10)" rx={VW * 0.004} style={{ pointerEvents: "none" }} />
             )}
+
+            {/* Text — clipped to zone */}
             <g clipPath={`url(#clip-${zone.id})`}>
-              {lines.map((line, i) => (
-                <text key={i} x={textX} y={baseY + i * lineH}
-                  textAnchor={anchor} fontFamily={font.family} fontSize={svgPt}
-                  fontWeight={cfg.bold ? 700 : 400} fontStyle={cfg.italic ? "italic" : "normal"}
+              {layout.lines.map((line, i) => (
+                <text key={i}
+                  x={layout.textX}
+                  y={layout.firstLineY + i * layout.lineH}
+                  dominantBaseline="hanging"
+                  textAnchor={layout.anchor}
+                  fontFamily={font.family}
+                  fontSize={layout.svgPt}
+                  fontWeight={cfg.bold ? 700 : 400}
+                  fontStyle={cfg.italic ? "italic" : "normal"}
                   fill={isPlaceholder ? "hsl(215, 12%, 44%)" : "hsl(210, 55%, 88%)"}
-                  style={{ userSelect: "none" }}>{line}</text>
+                  style={{ userSelect: "none" }}>
+                  {line}
+                </text>
               ))}
             </g>
+
+            {/* Overflow badge */}
             {overflows && (
               <g style={{ pointerEvents: "none" }}>
                 <rect x={zx + zw - 112} y={zy + 5} width={107} height={19} rx={9.5} fill="hsl(0, 84%, 52%)" />
                 <text x={zx + zw - 58.5} y={zy + 17.5} textAnchor="middle" fontSize={11}
                   fill="white" fontFamily="system-ui, sans-serif" fontWeight={600}
+                  dominantBaseline="alphabetic"
                   style={{ userSelect: "none" }}>⚠ Text overflow</text>
               </g>
             )}
@@ -600,15 +575,13 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
         );
       })}
 
-      {/* User-configured decorative divider lines */}
+      {/* Decorative divider lines */}
       {n > 1 && rects.slice(0, -1).map(({ zx, zy, zw, zh }, i) => {
         const div = dividers[i];
         if (!div?.enabled) return null;
-        const dArr = div.style === "dotted" ? `${VW * 0.003},${VW * 0.009}`
-                   : div.style === "dashed" ? `${VW * 0.022},${VW * 0.011}` : "none";
+        const dArr = dividerDashArray(div.style);
         const next = rects[i + 1];
         if (direction === "horizontal") {
-          // Horizontal decorative line in the gap between stacked zones
           const midY = (zy + zh + next.zy) / 2;
           return (
             <line key={`divline-${i}`}
@@ -617,7 +590,6 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
               strokeDasharray={dArr} strokeLinecap="round" style={{ pointerEvents: "none" }} />
           );
         } else {
-          // Vertical decorative line in the gap between side-by-side columns
           const midX = (zx + zw + next.zx) / 2;
           return (
             <line key={`divline-${i}`}
@@ -650,13 +622,13 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
               <rect x={zx + zw / 2 - pillW / 2} y={midY - pillH / 2} width={pillW} height={pillH}
                 rx={pillH / 2} fill={pillFill} style={{ pointerEvents: "none" }} />
               <text x={zx + zw / 2} y={midY + 4} textAnchor="middle" fontSize={10}
+                dominantBaseline="alphabetic"
                 fill="rgba(255,255,255,0.9)" fontFamily="sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>
                 ▲ ▼
               </text>
             </g>
           );
         } else {
-          // Vertical mode: handle sits in the gap between columns
           const midX = (zx + zw + next.zx) / 2;
           const midY = zy + zh / 2;
           return (
@@ -668,14 +640,15 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
                 stroke={lineColor} strokeWidth={active ? 2.5 : 1.5}
                 strokeDasharray={active ? "0" : "6,4"} strokeOpacity={active ? 1 : 0.55}
                 style={{ pointerEvents: "none" }} />
-              {/* Vertical pill */}
               <rect x={midX - 12} y={midY - 30} width={24} height={60} rx={12}
                 fill={pillFill} style={{ pointerEvents: "none" }} />
               <text x={midX} y={midY - 8} textAnchor="middle" fontSize={12}
+                dominantBaseline="alphabetic"
                 fill="rgba(255,255,255,0.9)" fontFamily="sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>
                 ◄
               </text>
               <text x={midX} y={midY + 14} textAnchor="middle" fontSize={12}
+                dominantBaseline="alphabetic"
                 fill="rgba(255,255,255,0.9)" fontFamily="sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>
                 ►
               </text>
@@ -691,17 +664,23 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
 
 function CustomizePanel({
   zones, lineConfigs, numSegments, segments, direction, dividers, overflowMap,
-  hasOverflow, onChangeDirection, onChangeNumSegments, onAdjustSegment, onUpdateZone, onUpdateDivider,
+  hasOverflow, cartCount,
+  onChangeDirection, onChangeNumSegments, onAdjustSegment, onUpdateZone, onUpdateDivider,
+  onAddToCart, onBulkCsv, onViewCart,
 }: {
   zones: TextZone[]; lineConfigs: ZoneConfigs;
   numSegments: number; segments: number[];
   direction: Direction; dividers: DividerConfig[];
-  overflowMap: Record<string, OverflowInfo>; hasOverflow: boolean;
+  overflowMap: Record<string, OverflowInfo>;
+  hasOverflow: boolean; cartCount: number;
   onChangeDirection: (d: Direction) => void;
   onChangeNumSegments: (n: number) => void;
   onAdjustSegment: (idx: number, delta: number) => void;
   onUpdateZone: (id: string, patch: Partial<ZoneConfig>) => void;
   onUpdateDivider: (idx: number, patch: Partial<DividerConfig>) => void;
+  onAddToCart: () => void;
+  onBulkCsv: () => void;
+  onViewCart: () => void;
 }) {
   const segLabel = direction === "horizontal" ? "Lines of Text" : "Columns";
 
@@ -759,21 +738,45 @@ function CustomizePanel({
         </div>
       ))}
 
-      {/* Continue button */}
-      <div className="pt-2 border-t border-border">
-        <button data-testid="button-continue" disabled={hasOverflow}
-          title={hasOverflow ? "Fix text overflow before continuing" : undefined}
+      {/* Cart actions */}
+      <div className="pt-2 border-t border-border space-y-2">
+        {/* Add single */}
+        <button
+          data-testid="button-add-to-cart"
+          onClick={onAddToCart}
+          disabled={hasOverflow}
+          title={hasOverflow ? "Fix text overflow before adding to cart" : "Add this nameplate to your order"}
           className={`w-full rounded py-2.5 text-sm font-bold transition-all ${
             hasOverflow
               ? "bg-muted text-muted-foreground cursor-not-allowed border border-border"
               : "bg-primary text-white hover:bg-primary/90 active:scale-[0.98]"
           }`}>
-          {hasOverflow ? "Fix overflow to continue" : "Continue to Order →"}
+          {hasOverflow ? "Fix overflow to continue" : "Add to Order"}
         </button>
+
+        {/* Bulk CSV */}
+        <button
+          data-testid="button-bulk-csv"
+          onClick={onBulkCsv}
+          className="w-full rounded border border-border bg-background py-2 text-xs font-semibold text-foreground hover:border-primary hover:text-primary transition-all"
+        >
+          Bulk Add from CSV
+        </button>
+
         {hasOverflow && (
-          <p className="mt-1.5 text-center text-[10px] text-red-500 leading-snug">
+          <p className="text-center text-[10px] text-red-500 leading-snug">
             One or more zones overflow. Reduce text, lower font size, enable word wrap, or increase zone size.
           </p>
+        )}
+
+        {/* Cart summary link */}
+        {cartCount > 0 && (
+          <button
+            onClick={onViewCart}
+            className="w-full text-center text-[11px] text-muted-foreground hover:text-primary transition-colors"
+          >
+            View order &mdash; {cartCount} item{cartCount !== 1 ? "s" : ""} &rarr;
+          </button>
         )}
       </div>
     </div>
@@ -837,10 +840,10 @@ function ZoneEditor({ zone, idx, segmentPct, showSegmentControl, direction, cfg,
   onUpdate: (patch: Partial<ZoneConfig>) => void;
   onAdjustSegment: (delta: number) => void;
 }) {
-  const font        = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
+  const font         = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
   const letterHeight = approxLetterHeightIn(cfg.fontSize);
-  const ov       = overflowInfo;
-  const overflows = ov?.overflows ?? false;
+  const ov           = overflowInfo;
+  const overflows    = ov?.overflows ?? false;
   const showTextarea = zone.multiline || cfg.wordWrap;
   const segCtrlTitle = direction === "horizontal"
     ? "Zone height in 5% steps — or drag dividers on the preview"
@@ -924,7 +927,7 @@ function ZoneEditor({ zone, idx, segmentPct, showSegmentControl, direction, cfg,
             onClick={() => onUpdate({ wordWrap: !cfg.wordWrap })}><WrapText size={11} /></ToggleBtn>
         </div>
 
-        {/* 3×3 alignment grid — each cell sets both hAlign and vAlign at once */}
+        {/* 3×3 alignment grid */}
         <div>
           <p className="mb-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Alignment</p>
           <div className="grid grid-cols-3 gap-0.5 w-[82px]">
@@ -990,7 +993,6 @@ function ToggleBtn({ testId, active, title, onClick, children, wide }: {
   );
 }
 
-/** Small SVG dot that visually indicates the alignment position within a 3×3 grid cell. */
 function AlignDot({ vAlign, hAlign, active }: {
   vAlign: "top" | "center" | "bottom";
   hAlign: "left" | "center" | "right";
