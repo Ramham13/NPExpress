@@ -154,7 +154,9 @@ function computeOverflowMap(
     const zh   = (zone.heightPct / 100) * innerH;
     const zw   = (zone.widthPct  / 100) * innerW;
     const availW = zw - 2 * INNER_PAD;
-    const svgFontSize = Math.max(10, Math.min(cfg.fontSize * (VW / 100), zh * 0.58));
+    // pt → SVG px: 1 pt = 1/72 in; plate is size.width in = VW SVG px.
+    // No zone-height scaling — font size is absolute and controlled only by the user.
+    const svgFontSize = Math.max(4, cfg.fontSize / 72 * (VW / size.width));
     const lineH       = svgFontSize * 1.28;
     const font        = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
     const fontSpec    = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgFontSize}px ${font.family}`;
@@ -527,10 +529,12 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
         const font         = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
         const displayText  = cfg.text || zone.placeholder;
         const isPlaceholder = !cfg.text;
-        const clampedSize  = Math.max(10, Math.min(cfg.fontSize * (VW / 100), zh * 0.58));
-        const lineH        = clampedSize * 1.28;
+        // pt → SVG px: 1 pt = 1/72 in; plate is size.width in = VW SVG px.
+        // No zone-height scaling — font size is absolute and controlled only by the user.
+        const svgPt        = Math.max(4, cfg.fontSize / 72 * (VW / size.width));
+        const lineH        = svgPt * 1.28;
         const availTextW   = zw - 2 * INNER_PAD;
-        const fontSpec     = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${clampedSize}px ${font.family}`;
+        const fontSpec     = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
         const lines        = (!isPlaceholder && cfg.wordWrap)
           ? wrapWords(displayText, fontSpec, availTextW)
           : displayText.split("\n");
@@ -542,9 +546,9 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
         else                             { textX = zx + zw / 2;  anchor = "middle"; }
 
         let baseY: number;
-        if (cfg.vAlign === "top")         baseY = zy + INNER_PAD + clampedSize * 0.85;
-        else if (cfg.vAlign === "bottom") baseY = zy + zh - totalTH + clampedSize * 0.85 - INNER_PAD;
-        else                              baseY = zy + zh / 2 - totalTH / 2 + clampedSize * 0.85;
+        if (cfg.vAlign === "top")         baseY = zy + INNER_PAD + svgPt * 0.85;
+        else if (cfg.vAlign === "bottom") baseY = zy + zh - totalTH + svgPt * 0.85 - INNER_PAD;
+        else                              baseY = zy + zh / 2 - totalTH / 2 + svgPt * 0.85;
 
         const ov = overflowMap[zone.id];
         const overflows = ov?.overflows ?? false;
@@ -564,7 +568,7 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
             <g clipPath={`url(#clip-${zone.id})`}>
               {lines.map((line, i) => (
                 <text key={i} x={textX} y={baseY + i * lineH}
-                  textAnchor={anchor} fontFamily={font.family} fontSize={clampedSize}
+                  textAnchor={anchor} fontFamily={font.family} fontSize={svgPt}
                   fontWeight={cfg.bold ? 700 : 400} fontStyle={cfg.italic ? "italic" : "normal"}
                   fill={isPlaceholder ? "hsl(215, 12%, 44%)" : "hsl(210, 55%, 88%)"}
                   style={{ userSelect: "none" }}>{line}</text>
