@@ -22,7 +22,15 @@ export const V_TOP = 5, V_BOT = 5, V_LEFT = 4, V_RIGHT = 4, V_GAP = 1;
 export type Direction    = "horizontal" | "vertical";
 export type DividerStyle = "solid" | "dotted" | "dashed";
 export interface DividerConfig { enabled: boolean; style: DividerStyle; }
-export interface OverflowInfo  { widthOverflow: boolean; heightOverflow: boolean; overflows: boolean; }
+export interface OverflowInfo {
+  /** Text exceeds its assigned zone/segment boundary — non-blocking, shown as amber warning. */
+  widthOverflow: boolean;
+  heightOverflow: boolean;
+  /** Any zone-level overflow (union of width + height). Non-blocking. */
+  overflows: boolean;
+  /** Text physically extends past the actual nameplate edge — hard-blocks submission. */
+  plateBoundaryOverflow: boolean;
+}
 
 export interface CartItem {
   id: string;
@@ -278,20 +286,49 @@ export function computeOverflowMap(
   for (const zone of zones) {
     const cfg  = lineConfigs[zone.id] ?? defaultZoneConfig();
     const text = cfg.text.trim();
-    if (!text) { result[zone.id] = { widthOverflow: false, heightOverflow: false, overflows: false }; continue; }
+    if (!text) {
+      result[zone.id] = { widthOverflow: false, heightOverflow: false, overflows: false, plateBoundaryOverflow: false };
+      continue;
+    }
+    // Zone coordinates relative to plate inner area (0…innerW, 0…innerH)
+    const zx   = (zone.xPct      / 100) * innerW;
+    const zy   = (zone.yPct      / 100) * innerH;
     const zh   = (zone.heightPct / 100) * innerH;
     const zw   = (zone.widthPct  / 100) * innerW;
-    const svgPt   = ptToSvgPx(cfg.fontSize, size.width);
-    const lineH   = svgPt * 1.2;
-    const font    = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
+    const svgPt    = ptToSvgPx(cfg.fontSize, size.width);
+    const lineH    = svgPt * 1.2;
+    const font     = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
     const fontSpec = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
     ctx.font = fontSpec;
-    const renderLines   = cfg.wordWrap ? wrapWords(text, fontSpec, zw) : text.split("\n");
-    const maxLineW      = Math.max(...renderLines.map((l) => ctx.measureText(l || " ").width));
-    const totalH        = renderLines.length * lineH;
+    const renderLines = cfg.wordWrap ? wrapWords(text, fontSpec, zw) : text.split("\n");
+    const maxLineW    = Math.max(...renderLines.map((l) => ctx.measureText(l || " ").width));
+    const totalH      = renderLines.length * lineH;
+
+    // ── Zone / segment boundary overflow (non-blocking — amber warning) ────────
     const widthOverflow  = !cfg.wordWrap && maxLineW > zw;
     const heightOverflow = totalH > zh;
-    result[zone.id] = { widthOverflow, heightOverflow, overflows: widthOverflow || heightOverflow };
+
+    // ── Plate boundary overflow (hard-blocks submission) ──────────────────────
+    // Check whether the rendered text extends past the physical plate inner edge.
+    const hAlign = cfg.hAlign ?? "center";
+    let plateBoundaryOverflowW = false;
+    if (hAlign === "center") {
+      const cx = zx + zw / 2;
+      plateBoundaryOverflowW = (cx - maxLineW / 2) < 0 || (cx + maxLineW / 2) > innerW;
+    } else if (hAlign === "left") {
+      plateBoundaryOverflowW = (zx + maxLineW) > innerW;
+    } else {
+      // right-aligned: text ends at zx+zw, starts at zx+zw-maxLineW
+      plateBoundaryOverflowW = (zx + zw - maxLineW) < 0;
+    }
+    const plateBoundaryOverflowH = (zy + totalH) > innerH;
+    const plateBoundaryOverflow  = plateBoundaryOverflowW || plateBoundaryOverflowH;
+
+    result[zone.id] = {
+      widthOverflow, heightOverflow,
+      overflows: widthOverflow || heightOverflow,
+      plateBoundaryOverflow,
+    };
   }
   return result;
 }
