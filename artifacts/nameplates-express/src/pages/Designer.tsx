@@ -6,22 +6,60 @@ import {
   type TagSize, type Template, type TextZone, type ZoneConfigs, type ZoneConfig,
 } from "@/data/templates";
 
-// ─── Auto-layout: divide plate into N equal horizontal bands ─────────────────
+// ─── Split presets (20% increments, always sum to 100) ───────────────────────
+// Each inner array is the % share per line from top to bottom.
 
-function computeAutoZones(n: number): TextZone[] {
-  const TOP = 5, BOT = 5, GAP = 3;
-  const avail = 100 - TOP - BOT - GAP * (n - 1);
-  const h = avail / n;
-  return Array.from({ length: n }, (_, i) => ({
-    id: `line${i + 1}`,
-    label: n === 1 ? "Text" : `Line ${i + 1}`,
-    placeholder: n === 1 ? "YOUR TEXT HERE" : `LINE ${i + 1}`,
-    xPct: 4,
-    yPct: TOP + i * (h + GAP),
-    widthPct: 92,
-    heightPct: h,
-    align: "center" as const,
-  }));
+const SPLIT_PRESETS: Record<number, number[][]> = {
+  1: [[100]],
+  2: [
+    [80, 20],
+    [60, 40],
+    [40, 60],
+    [20, 80],
+  ],
+  3: [
+    [60, 20, 20],
+    [20, 60, 20],
+    [20, 20, 60],
+    [40, 40, 20],
+    [40, 20, 40],
+    [20, 40, 40],
+  ],
+  4: [
+    [40, 20, 20, 20],
+    [20, 40, 20, 20],
+    [20, 20, 40, 20],
+    [20, 20, 20, 40],
+  ],
+  5: [[20, 20, 20, 20, 20]],
+};
+
+function defaultSplit(n: number): number[] {
+  return SPLIT_PRESETS[n]?.[0] ?? Array(n).fill(Math.round(100 / n));
+}
+
+// ─── Build zones from a split array ──────────────────────────────────────────
+
+function computeZonesFromSplit(split: number[]): TextZone[] {
+  const TOP = 5, BOT = 5, GAP = 2;
+  const n = split.length;
+  const available = 100 - TOP - BOT - GAP * (n - 1);
+  let yOffset = TOP;
+  return split.map((pct, i) => {
+    const h = (pct / 100) * available;
+    const zone: TextZone = {
+      id: `line${i + 1}`,
+      label: n === 1 ? "Text" : `Line ${i + 1}`,
+      placeholder: n === 1 ? "YOUR TEXT HERE" : `LINE ${i + 1}`,
+      xPct: 4,
+      yPct: yOffset,
+      widthPct: 92,
+      heightPct: h,
+      align: "center" as const,
+    };
+    yOffset += h + GAP;
+    return zone;
+  });
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
@@ -30,7 +68,8 @@ export default function Designer() {
   const [selectedSize, setSelectedSize] = useState<TagSize | null>(null);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [numLines, setNumLines] = useState(1);
-  const [zones, setZones] = useState<TextZone[]>(computeAutoZones(1));
+  const [split, setSplit] = useState<number[]>([100]);
+  const [zones, setZones] = useState<TextZone[]>(computeZonesFromSplit([100]));
   const [lineConfigs, setLineConfigs] = useState<ZoneConfigs>({ line1: defaultZoneConfig() });
 
   const compatibleTemplates = selectedSize
@@ -39,17 +78,17 @@ export default function Designer() {
 
   function pickSize(size: TagSize) {
     setSelectedSize(size);
-    // Reset to blank, 1 line
-    const z = computeAutoZones(1);
+    const s = [100];
     setActiveTemplateId(null);
     setNumLines(1);
-    setZones(z);
+    setSplit(s);
+    setZones(computeZonesFromSplit(s));
     setLineConfigs({ line1: defaultZoneConfig() });
   }
 
   function selectBlank() {
     setActiveTemplateId(null);
-    const z = computeAutoZones(numLines);
+    const z = computeZonesFromSplit(split);
     setZones(z);
     const cfg: ZoneConfigs = {};
     z.forEach((zone) => { cfg[zone.id] = lineConfigs[zone.id] ?? defaultZoneConfig(); });
@@ -58,7 +97,16 @@ export default function Designer() {
 
   function selectTemplate(template: Template) {
     setActiveTemplateId(template.id);
+    // Derive a split from template zone heights (normalize to %)
+    const totalH = template.zones.reduce((s, z) => s + z.heightPct, 0);
+    const tSplit = template.zones.map((z) => Math.round((z.heightPct / totalH) * 100));
+    // Round to nearest 20
+    const rounded = tSplit.map((v) => Math.round(v / 20) * 20);
+    // Fix rounding drift so they sum to 100
+    const diff = 100 - rounded.reduce((a, b) => a + b, 0);
+    if (diff !== 0) rounded[0] += diff;
     setNumLines(template.zones.length);
+    setSplit(rounded);
     setZones(template.zones);
     const cfg: ZoneConfigs = {};
     template.zones.forEach((z) => { cfg[z.id] = lineConfigs[z.id] ?? defaultZoneConfig(); });
@@ -67,8 +115,21 @@ export default function Designer() {
 
   function changeNumLines(n: number) {
     setActiveTemplateId(null);
+    const s = defaultSplit(n);
     setNumLines(n);
-    const newZones = computeAutoZones(n);
+    setSplit(s);
+    const newZones = computeZonesFromSplit(s);
+    setZones(newZones);
+    const oldVals = Object.values(lineConfigs);
+    const cfg: ZoneConfigs = {};
+    newZones.forEach((z, i) => { cfg[z.id] = oldVals[i] ?? defaultZoneConfig(); });
+    setLineConfigs(cfg);
+  }
+
+  function changeSplit(s: number[]) {
+    setActiveTemplateId(null);
+    setSplit(s);
+    const newZones = computeZonesFromSplit(s);
     setZones(newZones);
     const oldVals = Object.values(lineConfigs);
     const cfg: ZoneConfigs = {};
@@ -112,7 +173,7 @@ export default function Designer() {
         </div>
       </header>
 
-      {/* Three-panel layout — fills remaining height */}
+      {/* Three-panel layout */}
       <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
 
         {/* LEFT: template selector */}
@@ -134,7 +195,7 @@ export default function Designer() {
           className="flex-1 flex items-center justify-center overflow-hidden bg-[hsl(220_20%_8%)] p-4 lg:p-8"
           style={{ minHeight: "180px", minWidth: 0 }}
         >
-          <PlatePreview size={selectedSize} zones={zones} lineConfigs={lineConfigs} />
+          <PlatePreview size={selectedSize} zones={zones} lineConfigs={lineConfigs} split={split} />
         </div>
 
         {/* RIGHT: customization panel */}
@@ -146,7 +207,9 @@ export default function Designer() {
             zones={zones}
             lineConfigs={lineConfigs}
             numLines={numLines}
+            split={split}
             onChangeNumLines={changeNumLines}
+            onChangeSplit={changeSplit}
             onUpdateZone={updateZone}
           />
         </aside>
@@ -270,9 +333,8 @@ function TemplatePanel({ size, templates, activeTemplateId, onBlank, onTemplate 
                 : "border-transparent hover:border-border hover:bg-muted/50"
             }`}
           >
-            {/* Mini preview SVG */}
             <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}
-              className="mb-1.5 block rounded" style={{ display: "block" }}>
+              className="mb-1.5 block rounded">
               <defs>
                 <linearGradient id={`tg-${t.id}`} x1="0" y1="0" x2="1" y2="1">
                   <stop offset="0%" stopColor="hsl(220, 20%, 18%)" />
@@ -301,10 +363,11 @@ function TemplatePanel({ size, templates, activeTemplateId, onBlank, onTemplate 
 
 // ─── Center: plate SVG preview ────────────────────────────────────────────────
 
-function PlatePreview({ size, zones, lineConfigs }: {
+function PlatePreview({ size, zones, lineConfigs, split }: {
   size: TagSize;
   zones: TextZone[];
   lineConfigs: ZoneConfigs;
+  split: number[];
 }) {
   const VW = 1000;
   const VH = Math.round(VW * size.height / size.width);
@@ -353,14 +416,12 @@ function PlatePreview({ size, zones, lineConfigs }: {
         const lineH = clampedSize * 1.28;
         const totalH = lines.length * lineH;
 
-        // Horizontal
         let textX: number;
         let anchor: "start" | "middle" | "end";
         if (cfg.hAlign === "left")       { textX = zx + INNER_PAD; anchor = "start"; }
         else if (cfg.hAlign === "right") { textX = zx + zw - INNER_PAD; anchor = "end"; }
         else                             { textX = zx + zw / 2; anchor = "middle"; }
 
-        // Vertical — baseline of first line
         let baseY: number;
         if (cfg.vAlign === "top")         baseY = zy + INNER_PAD + clampedSize * 0.85;
         else if (cfg.vAlign === "bottom") baseY = zy + zh - totalH + clampedSize * 0.85 - INNER_PAD;
@@ -396,22 +457,28 @@ function PlatePreview({ size, zones, lineConfigs }: {
 
 // ─── Right panel: customization ───────────────────────────────────────────────
 
-function CustomizePanel({ zones, lineConfigs, numLines, onChangeNumLines, onUpdateZone }: {
+function CustomizePanel({ zones, lineConfigs, numLines, split, onChangeNumLines, onChangeSplit, onUpdateZone }: {
   zones: TextZone[];
   lineConfigs: ZoneConfigs;
   numLines: number;
+  split: number[];
   onChangeNumLines: (n: number) => void;
+  onChangeSplit: (s: number[]) => void;
   onUpdateZone: (id: string, patch: Partial<ZoneConfig>) => void;
 }) {
+  const presets = SPLIT_PRESETS[numLines] ?? [];
+  const activeSplitKey = split.join("/");
+
   return (
     <div className="p-3 space-y-4">
+
       {/* Number of lines */}
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-0.5">
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
           Lines of Text
         </p>
         <div className="flex gap-1.5">
-          {[1, 2, 3, 4].map((n) => (
+          {[1, 2, 3, 4, 5].map((n) => (
             <button key={n}
               data-testid={`button-numlines-${n}`}
               onClick={() => onChangeNumLines(n)}
@@ -424,9 +491,44 @@ function CustomizePanel({ zones, lineConfigs, numLines, onChangeNumLines, onUpda
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[10px] text-muted-foreground">
-          Changing lines resets to auto-layout.
+      </div>
+
+      {/* Zone height split */}
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          Line Heights {numLines > 1 ? <span className="normal-case font-normal tracking-normal">(top&rarr;bottom, %)</span> : null}
         </p>
+
+        {presets.length === 1 ? (
+          // Only one option — just show it as a static label
+          <div className="inline-flex items-center rounded border border-primary bg-primary/10 px-3 py-1.5">
+            <span className="font-mono text-xs font-bold text-primary">{presets[0].join(" / ")}</span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {presets.map((preset) => {
+              const key = preset.join("/");
+              const isActive = key === activeSplitKey;
+              return (
+                <button key={key}
+                  data-testid={`button-split-${key}`}
+                  onClick={() => onChangeSplit(preset)}
+                  className={`flex items-center gap-2 rounded border px-3 py-1.5 text-left transition-all ${
+                    isActive
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-card hover:border-primary/60"
+                  }`}
+                >
+                  {/* Mini bar chart showing proportions */}
+                  <SplitBar split={preset} active={isActive} />
+                  <span className={`font-mono text-xs font-bold ${isActive ? "text-primary" : "text-foreground"}`}>
+                    {preset.join(" / ")}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="border-t border-border" />
@@ -437,6 +539,7 @@ function CustomizePanel({ zones, lineConfigs, numLines, onChangeNumLines, onUpda
           key={zone.id}
           zone={zone}
           idx={idx}
+          splitPct={split[idx] ?? 0}
           cfg={lineConfigs[zone.id] ?? defaultZoneConfig()}
           onUpdate={(patch) => onUpdateZone(zone.id, patch)}
         />
@@ -445,11 +548,35 @@ function CustomizePanel({ zones, lineConfigs, numLines, onChangeNumLines, onUpda
   );
 }
 
+// ─── Tiny bar chart for split preset buttons ──────────────────────────────────
+
+function SplitBar({ split, active }: { split: number[]; active: boolean }) {
+  const total = split.reduce((a, b) => a + b, 0);
+  const colors = active
+    ? ["hsl(24,95%,53%)", "hsl(24,70%,38%)", "hsl(24,55%,30%)", "hsl(24,45%,24%)", "hsl(24,38%,20%)"]
+    : ["hsl(220,15%,38%)", "hsl(220,15%,32%)", "hsl(220,15%,28%)", "hsl(220,15%,24%)", "hsl(220,15%,21%)"];
+
+  // Vertical bar: height = 24px, width = 12px
+  const W = 12, H = 24;
+  let yOffset = 0;
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ flexShrink: 0 }}>
+      {split.map((pct, i) => {
+        const h = (pct / total) * H;
+        const rect = <rect key={i} x={0} y={yOffset} width={W} height={Math.max(1, h - 1)} rx={1.5} fill={colors[i % colors.length]} />;
+        yOffset += h;
+        return rect;
+      })}
+    </svg>
+  );
+}
+
 // ─── Per-zone editor ──────────────────────────────────────────────────────────
 
-function ZoneEditor({ zone, idx, cfg, onUpdate }: {
+function ZoneEditor({ zone, idx, splitPct, cfg, onUpdate }: {
   zone: TextZone;
   idx: number;
+  splitPct: number;
   cfg: ZoneConfig;
   onUpdate: (patch: Partial<ZoneConfig>) => void;
 }) {
@@ -459,11 +586,14 @@ function ZoneEditor({ zone, idx, cfg, onUpdate }: {
   return (
     <div className="rounded border border-border bg-card overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-1.5">
-        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary flex-shrink-0">
-          {idx + 1}
-        </span>
-        <span className="text-xs font-semibold text-foreground">{zone.label}</span>
+      <div className="flex items-center justify-between border-b border-border bg-muted/50 px-3 py-1.5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary flex-shrink-0">
+            {idx + 1}
+          </span>
+          <span className="text-xs font-semibold text-foreground">{zone.label}</span>
+        </div>
+        <span className="font-mono text-[10px] text-muted-foreground">{splitPct}% height</span>
       </div>
 
       <div className="p-3 space-y-2.5">
@@ -569,7 +699,7 @@ function ZoneEditor({ zone, idx, cfg, onUpdate }: {
   );
 }
 
-// ─── Small shared UI helpers ──────────────────────────────────────────────────
+// ─── Shared UI helpers ────────────────────────────────────────────────────────
 
 function DropChevron() {
   return (
