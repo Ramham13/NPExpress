@@ -153,23 +153,37 @@ export function wrapWords(text: string, fontSpec: string, maxW: number): string[
 }
 
 // ─── Text layout ──────────────────────────────────────────────────────────────
+
 /**
  * Compute all SVG text positioning for one zone.
  *
- * Uses dominantBaseline="hanging" convention: y = TOP of em square.
- * This makes the math exact:
- *   top    → firstLineY = zy
- *   center → firstLineY = zy + (zh − blockH) / 2
- *   bottom → firstLineY = zy + zh − blockH
- * No font-metric approximations needed.
+ * Uses the SVG default dominant-baseline (alphabetic), so firstLineY is the
+ * ALPHABETIC BASELINE of the first rendered line.
+ *
+ * Vertical positioning uses canvas.measureText().actualBoundingBoxAscent/Descent,
+ * which returns real rendered pixel extents — not the em-square, not CSS line-height.
+ * This is the only model that makes top/center/bottom alignment pixel-exact for
+ * every font, size, bold/italic combination, and segment configuration.
  */
 export interface TextLayout {
   lines: string[];
   lineH: number;
   svgPt: number;
+  /** Alphabetic baseline y-coordinate of the first rendered line. */
   firstLineY: number;
   textX: number;
   anchor: "start" | "middle" | "end";
+}
+
+// Module-level canvas — reused across calls to avoid repeated allocation.
+let _measureCanvas: HTMLCanvasElement | null = null;
+function getMeasureCtx(): CanvasRenderingContext2D | null {
+  try {
+    if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
+    return _measureCanvas.getContext("2d");
+  } catch {
+    return null;
+  }
 }
 
 export function computeTextLayout(
@@ -179,12 +193,12 @@ export function computeTextLayout(
   size: TagSize,
   isPlaceholder: boolean,
 ): TextLayout {
-  const font   = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
-  const svgPt  = ptToSvgPx(cfg.fontSize, size.width);
-  const lineH  = svgPt * 1.2; // 120% line height — space between line tops
+  const font     = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
+  const svgPt    = ptToSvgPx(cfg.fontSize, size.width);
+  const lineH    = svgPt * 1.2; // baseline-to-baseline line spacing
   const fontSpec = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
 
-  // Empty zones render nothing in the preview — placeholders are form-only.
+  // Empty zones render nothing — placeholder text is for form inputs only.
   let lines: string[];
   if (isPlaceholder) {
     lines = [];
@@ -201,23 +215,48 @@ export function computeTextLayout(
   else if (cfg.hAlign === "right") { textX = zx + zw;     anchor = "end";    }
   else                             { textX = zx + zw / 2; anchor = "middle"; }
 
-  // Vertical positioning — dominantBaseline="hanging" means y = top of em square.
+  // ── Pixel-accurate vertical positioning ──────────────────────────────────────
+  // canvas.measureText() actualBoundingBoxAscent/Descent give the actual rendered
+  // pixel extents relative to the alphabetic baseline (NOT the em-square):
   //
-  // The visual block spans from top of first em square to bottom of last em square.
-  // blockH = (n−1) lines of full lineH + one final svgPt (no trailing gap after last line).
-  // This ensures bottom-aligned text has zero gap between the last glyph and the zone edge.
-  const n      = lines.length;
-  const blockH = n <= 1 ? svgPt : (n - 1) * lineH + svgPt;
+  //   capH  = baseline → top of highest rendered pixel
+  //   descH = baseline → bottom of lowest rendered pixel (≥ 0)
+  //
+  // Visual block of n lines:
+  //   top    = firstLineBaseline − capH
+  //   bottom = lastLineBaseline + descH = firstLineBaseline + (n−1)·lineH + descH
+  //   height = capH + (n−1)·lineH + descH
+  //
+  // Alignment (firstLineBaseline = y of first <text> element, alphabetic baseline):
+  //   top    → firstLineBaseline = zy + capH
+  //   bottom → firstLineBaseline = zy + zh − descH − (n−1)·lineH
+  //   center → firstLineBaseline = zy + (zh − visBlockH)/2 + capH
+
+  // Sensible em-square fallbacks if canvas is unavailable (SSR, tests).
+  let capH  = svgPt * 0.72; // typical Latin cap height ratio
+  let descH = svgPt * 0.20; // typical Latin descender depth
+
+  const ctx = getMeasureCtx();
+  if (ctx && lines.length > 0) {
+    ctx.font = fontSpec;
+    const sample = lines.filter(Boolean).join(" ") || "M";
+    const m = ctx.measureText(sample);
+    if (m.actualBoundingBoxAscent  > 0)  capH  = m.actualBoundingBoxAscent;
+    if (m.actualBoundingBoxDescent >= 0) descH = m.actualBoundingBoxDescent;
+  }
+
+  const n         = lines.length;
+  const visBlockH = n <= 0 ? 0 : capH + (n - 1) * lineH + descH;
 
   let firstLineY: number;
-  if (lines.length === 0) {
-    firstLineY = zy; // irrelevant — nothing is drawn
+  if (n === 0) {
+    firstLineY = zy + capH; // irrelevant — nothing is drawn
   } else if (cfg.vAlign === "top") {
-    firstLineY = zy;
+    firstLineY = zy + capH;
   } else if (cfg.vAlign === "bottom") {
-    firstLineY = zy + zh - blockH;
+    firstLineY = zy + zh - descH - (n - 1) * lineH;
   } else {
-    firstLineY = zy + (zh - blockH) / 2;
+    firstLineY = zy + (zh - visBlockH) / 2 + capH;
   }
 
   return { lines, lineH, svgPt, firstLineY, textX, anchor };

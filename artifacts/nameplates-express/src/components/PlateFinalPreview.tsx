@@ -95,13 +95,12 @@ export default function PlateFinalPreview({
                   key={i}
                   x={layout.textX}
                   y={layout.firstLineY + i * layout.lineH}
-                  dominantBaseline="hanging"
                   textAnchor={layout.anchor}
                   fontFamily={font.family}
                   fontSize={layout.svgPt}
                   fontWeight={cfg.bold ? 700 : 400}
                   fontStyle={cfg.italic ? "italic" : "normal"}
-                  fill={isPlaceholder ? "hsl(215, 12%, 32%)" : "hsl(210, 55%, 88%)"}
+                  fill="hsl(210, 55%, 88%)"
                   style={{ userSelect: "none" }}
                 >
                   {line}

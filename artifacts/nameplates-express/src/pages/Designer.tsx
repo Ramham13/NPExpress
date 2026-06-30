@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { RotateCcw, Bold, Italic, WrapText, AlertTriangle, Rows3, Columns3, ShoppingCart } from "lucide-react";
+import { RotateCcw, Bold, Italic, WrapText, AlertTriangle, Rows3, Columns3, ShoppingCart, Download, Upload, FileJson } from "lucide-react";
 import {
   TAG_SIZES, TEMPLATES, FONT_OPTIONS, FONT_SIZE_OPTIONS,
   defaultZoneConfig, approxLetterHeightIn,
@@ -147,6 +147,80 @@ export default function Designer() {
     setDividers((prev) => { const next = [...prev]; next[idx] = { ...next[idx], ...patch }; return next; });
   }
 
+  // ── Layout export / import ───────────────────────────────────────────────
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  function exportLayout() {
+    if (!selectedSize) return;
+    const payload = {
+      app: "nameplates-express",
+      version: "1",
+      exportedAt: new Date().toISOString(),
+      size: selectedSize,
+      direction,
+      heights,
+      widths,
+      lineConfigs,
+      dividers,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `nameplate-layout-${selectedSize.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importLayout(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+
+        // Basic identity validation
+        if (data?.app !== "nameplates-express" || !data?.version) {
+          setImportError("Not a valid Nameplates Express layout file.");
+          return;
+        }
+
+        // Field presence
+        if (!data.size || !data.direction || !Array.isArray(data.heights) ||
+            !Array.isArray(data.widths) || !data.lineConfigs || !Array.isArray(data.dividers)) {
+          setImportError("Layout file is missing required fields.");
+          return;
+        }
+
+        // Size must be a known size
+        const knownSize = TAG_SIZES.find((s) => s.id === data.size.id);
+        if (!knownSize) {
+          setImportError(`Unknown size id "${data.size.id}". Valid sizes: ${TAG_SIZES.map(s => s.id).join(", ")}.`);
+          return;
+        }
+
+        // Direction must be valid
+        if (data.direction !== "horizontal" && data.direction !== "vertical") {
+          setImportError(`Invalid direction "${data.direction}".`);
+          return;
+        }
+
+        // Apply — use known size object (not the one from the file) for safety
+        setSelectedSize(knownSize);
+        setDirection(data.direction as Direction);
+        setHeights(data.heights);
+        setWidths(data.widths);
+        setLineConfigs(data.lineConfigs);
+        setDividers(data.dividers);
+        setActiveTemplateId(null);
+        setImportError(null);
+      } catch {
+        setImportError("Could not parse the layout file. Make sure it is a valid .json file.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
   // ── Full-screen views ────────────────────────────────────────────────────
   if (appView === "cart") {
     return (
@@ -269,12 +343,25 @@ export default function Designer() {
 
         {/* Right: customize */}
         <aside className="lg:w-72 xl:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-border overflow-y-auto bg-background" style={{ minHeight: 0 }}>
+          {/* Hidden file input for layout import */}
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) importLayout(f);
+              e.target.value = "";
+            }}
+          />
           <CustomizePanel
             zones={zones} lineConfigs={lineConfigs}
             numSegments={numSegments} segments={segments}
             direction={direction} dividers={dividers}
             overflowMap={overflowMap} hasOverflow={hasOverflow}
             cartCount={cart.length}
+            importError={importError}
             onChangeDirection={changeDirection}
             onChangeNumSegments={changeNumSegments}
             onAdjustSegment={adjustSegment}
@@ -283,6 +370,8 @@ export default function Designer() {
             onAddToCart={addSingleToCart}
             onBulkCsv={() => setAppView("csv")}
             onViewCart={() => setAppView("cart")}
+            onExportLayout={exportLayout}
+            onImportLayout={() => importFileRef.current?.click()}
           />
         </aside>
       </div>
@@ -548,13 +637,12 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
                 <text key={i}
                   x={layout.textX}
                   y={layout.firstLineY + i * layout.lineH}
-                  dominantBaseline="hanging"
                   textAnchor={layout.anchor}
                   fontFamily={font.family}
                   fontSize={layout.svgPt}
                   fontWeight={cfg.bold ? 700 : 400}
                   fontStyle={cfg.italic ? "italic" : "normal"}
-                  fill={isPlaceholder ? "hsl(215, 12%, 44%)" : "hsl(210, 55%, 88%)"}
+                  fill="hsl(210, 55%, 88%)"
                   style={{ userSelect: "none" }}>
                   {line}
                 </text>
@@ -664,15 +752,16 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
 
 function CustomizePanel({
   zones, lineConfigs, numSegments, segments, direction, dividers, overflowMap,
-  hasOverflow, cartCount,
+  hasOverflow, cartCount, importError,
   onChangeDirection, onChangeNumSegments, onAdjustSegment, onUpdateZone, onUpdateDivider,
-  onAddToCart, onBulkCsv, onViewCart,
+  onAddToCart, onBulkCsv, onViewCart, onExportLayout, onImportLayout,
 }: {
   zones: TextZone[]; lineConfigs: ZoneConfigs;
   numSegments: number; segments: number[];
   direction: Direction; dividers: DividerConfig[];
   overflowMap: Record<string, OverflowInfo>;
   hasOverflow: boolean; cartCount: number;
+  importError: string | null;
   onChangeDirection: (d: Direction) => void;
   onChangeNumSegments: (n: number) => void;
   onAdjustSegment: (idx: number, delta: number) => void;
@@ -681,11 +770,44 @@ function CustomizePanel({
   onAddToCart: () => void;
   onBulkCsv: () => void;
   onViewCart: () => void;
+  onExportLayout: () => void;
+  onImportLayout: () => void;
 }) {
   const segLabel = direction === "horizontal" ? "Lines of Text" : "Columns";
 
   return (
     <div className="p-3 space-y-4 pb-4">
+      {/* Layout file: export / import */}
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+          <FileJson size={10} /> Layout File
+        </p>
+        <div className="flex gap-1.5">
+          <button
+            onClick={onExportLayout}
+            title="Download this layout as a reusable .json file"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-card py-1.5 text-xs font-semibold text-foreground hover:border-primary hover:text-primary transition-all"
+          >
+            <Download size={11} /> Export
+          </button>
+          <button
+            onClick={onImportLayout}
+            title="Load a previously exported layout .json file"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded border border-border bg-card py-1.5 text-xs font-semibold text-foreground hover:border-primary hover:text-primary transition-all"
+          >
+            <Upload size={11} /> Import
+          </button>
+        </div>
+        {importError && (
+          <p className="mt-1.5 flex items-start gap-1.5 rounded bg-red-500/10 border border-red-500/30 px-2 py-1.5 text-[10px] text-red-500 leading-snug">
+            <AlertTriangle size={10} className="flex-shrink-0 mt-px" />
+            {importError}
+          </p>
+        )}
+      </div>
+
+      <div className="border-t border-border" />
+
       {/* Segment direction */}
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Segment Direction</p>
