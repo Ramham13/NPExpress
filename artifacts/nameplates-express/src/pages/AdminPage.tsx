@@ -2,7 +2,7 @@
  * Admin Dashboard — only reachable via direct URL (/admin).
  * Not linked from any customer-facing navigation.
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, createContext, useContext } from "react";
 import { useAdmin } from "@/context/AdminContext";
 import {
   type AdminSize, type ColorOption, type PricingTier,
@@ -10,12 +10,92 @@ import {
 } from "@/lib/admin-store";
 import {
   Plus, Pencil, Trash2, RotateCcw, Save, X, ChevronUp, ChevronDown,
-  ShieldAlert, Info, Check, AlertTriangle,
+  ShieldAlert, Info, Check, AlertTriangle, Lock, LogOut,
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// TODO: Replace with a real auth system before going to production.
+// For a quick update, change this value and redeploy.
+const ADMIN_PASSWORD = "admin1234";
+const ADMIN_SESSION_KEY = "nx_admin_unlocked";
+
 const MAX_TIERS = 5;
+
+// ─── AdminGate ────────────────────────────────────────────────────────────────
+
+function AdminGate({ children }: { children: React.ReactNode }) {
+  const [unlocked, setUnlocked] = useState(
+    () => sessionStorage.getItem(ADMIN_SESSION_KEY) === "1"
+  );
+  const [input, setInput]     = useState("");
+  const [error, setError]     = useState(false);
+
+  function handleUnlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (input === ADMIN_PASSWORD) {
+      sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+      setUnlocked(true);
+      setError(false);
+    } else {
+      setError(true);
+      setInput("");
+    }
+  }
+
+  function handleLock() {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setUnlocked(false);
+    setInput("");
+    setError(false);
+  }
+
+  if (!unlocked) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-sm">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
+            <div className="flex justify-center mb-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                <Lock size={22} className="text-slate-500" />
+              </div>
+            </div>
+            <h1 className="text-center text-xl font-black text-slate-800 mb-1">Admin Access</h1>
+            <p className="text-center text-sm text-slate-400 mb-6">Enter the admin password to continue.</p>
+            <form onSubmit={handleUnlock} className="space-y-4">
+              <div>
+                <input
+                  type="password"
+                  autoFocus
+                  value={input}
+                  onChange={e => { setInput(e.target.value); setError(false); }}
+                  placeholder="Password"
+                  className={`w-full rounded border px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    error ? "border-red-400 focus:ring-red-400" : "border-slate-200"
+                  }`}
+                />
+                {error && (
+                  <p className="mt-1.5 text-xs text-red-500">Incorrect password. Try again.</p>
+                )}
+              </div>
+              <button
+                type="submit"
+                className="w-full rounded bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-sm font-bold text-white transition-colors"
+              >
+                Unlock
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <AdminGateContext.Provider value={handleLock}>{children}</AdminGateContext.Provider>;
+}
+
+const AdminGateContext = createContext<(() => void) | null>(null);
+function useLock() { return useContext(AdminGateContext)!; }
 
 // ─── Form state type ──────────────────────────────────────────────────────────
 
@@ -163,6 +243,14 @@ function ColorDots({ colors }: { colors: ColorOption[] }) {
 type AdminView = "list" | "add" | "edit";
 
 export default function AdminPage() {
+  return (
+    <AdminGate>
+      <AdminPageInner />
+    </AdminGate>
+  );
+}
+
+function AdminPageInner() {
   const { sizes, activeSizes, addSize, updateSize, deleteSize, resetToDefaults } = useAdmin();
   const [view, setView]           = useState<AdminView>("list");
   const [editId, setEditId]       = useState<string | null>(null);
@@ -608,6 +696,7 @@ export default function AdminPage() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function AdminHeader() {
+  const lock = useLock();
   return (
     <header className="bg-slate-900 text-white border-b border-slate-700 sticky top-0 z-10">
       <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
@@ -622,6 +711,13 @@ function AdminHeader() {
         <span className="rounded-full border border-orange-500/40 bg-orange-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-orange-400">
           Internal Only — Not linked from public UI
         </span>
+        <button
+          onClick={lock}
+          className="flex items-center gap-1.5 rounded border border-slate-600 hover:border-slate-400 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white transition-all"
+          title="Lock admin panel"
+        >
+          <LogOut size={12} /> Lock Admin
+        </button>
       </div>
     </header>
   );
