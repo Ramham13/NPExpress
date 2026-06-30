@@ -39,6 +39,7 @@ export interface ZoneConfig {
   italic: boolean;
   hAlign: "left" | "center" | "right";
   vAlign: "top" | "center" | "bottom";
+  wordWrap: boolean;
 }
 
 export type ZoneConfigs = Record<string, ZoneConfig>;
@@ -61,20 +62,8 @@ export const TEMPLATES: Template[] = [
     description: "Two-line tag for equipment name and serial/part number.",
     compatibleSizes: ["3x1", "4x2", "6x2", "6x3", "9x3", "8x4", "10x4"],
     zones: [
-      {
-        id: "name",
-        label: "Equipment Name",
-        placeholder: "PUMP MOTOR A",
-        xPct: 4, yPct: 8, widthPct: 92, heightPct: 42,
-        align: "center",
-      },
-      {
-        id: "serial",
-        label: "Serial / Part Number",
-        placeholder: "SN: 00123-B",
-        xPct: 4, yPct: 54, widthPct: 92, heightPct: 38,
-        align: "center",
-      },
+      { id: "name",   label: "Equipment Name",       placeholder: "PUMP MOTOR A",       xPct: 4, yPct: 8,  widthPct: 92, heightPct: 42, align: "center" },
+      { id: "serial", label: "Serial / Part Number", placeholder: "SN: 00123-B",        xPct: 4, yPct: 54, widthPct: 92, heightPct: 38, align: "center" },
     ],
   },
   {
@@ -83,20 +72,8 @@ export const TEMPLATES: Template[] = [
     description: "Large tag number with a smaller description line below.",
     compatibleSizes: ["3x1", "4x2", "6x2"],
     zones: [
-      {
-        id: "tagno",
-        label: "Tag Number",
-        placeholder: "V-101",
-        xPct: 4, yPct: 6, widthPct: 92, heightPct: 52,
-        align: "center",
-      },
-      {
-        id: "desc",
-        label: "Description",
-        placeholder: "FEED WATER SUPPLY",
-        xPct: 4, yPct: 62, widthPct: 92, heightPct: 30,
-        align: "center",
-      },
+      { id: "tagno", label: "Tag Number",  placeholder: "V-101",             xPct: 4, yPct: 6,  widthPct: 92, heightPct: 52, align: "center" },
+      { id: "desc",  label: "Description", placeholder: "FEED WATER SUPPLY", xPct: 4, yPct: 62, widthPct: 92, heightPct: 30, align: "center" },
     ],
   },
   {
@@ -105,20 +82,8 @@ export const TEMPLATES: Template[] = [
     description: "Wide-format label with function name and circuit identifier.",
     compatibleSizes: ["6x2", "6x3", "9x3", "8x4", "10x4"],
     zones: [
-      {
-        id: "function",
-        label: "Function / Label",
-        placeholder: "MAIN DISCONNECT",
-        xPct: 4, yPct: 8, widthPct: 92, heightPct: 46,
-        align: "center",
-      },
-      {
-        id: "circuit",
-        label: "Circuit / Panel ID",
-        placeholder: "PANEL MCC-3, CB-12",
-        xPct: 4, yPct: 58, widthPct: 92, heightPct: 32,
-        align: "center",
-      },
+      { id: "function", label: "Function / Label",  placeholder: "MAIN DISCONNECT",    xPct: 4, yPct: 8,  widthPct: 92, heightPct: 46, align: "center" },
+      { id: "circuit",  label: "Circuit / Panel ID", placeholder: "PANEL MCC-3, CB-12", xPct: 4, yPct: 58, widthPct: 92, heightPct: 32, align: "center" },
     ],
   },
   {
@@ -127,21 +92,8 @@ export const TEMPLATES: Template[] = [
     description: "Bold header warning with a body text area for instructions.",
     compatibleSizes: ["6x3", "9x3", "8x4", "10x4"],
     zones: [
-      {
-        id: "header",
-        label: "Warning Header",
-        placeholder: "WARNING",
-        xPct: 4, yPct: 6, widthPct: 92, heightPct: 30,
-        align: "center",
-      },
-      {
-        id: "body",
-        label: "Safety Instructions",
-        placeholder: "HIGH VOLTAGE — DO NOT OPEN\nAUTHORIZED PERSONNEL ONLY",
-        xPct: 4, yPct: 40, widthPct: 92, heightPct: 52,
-        align: "center",
-        multiline: true,
-      },
+      { id: "header", label: "Warning Header",       placeholder: "WARNING",                                         xPct: 4, yPct: 6,  widthPct: 92, heightPct: 30, align: "center" },
+      { id: "body",   label: "Safety Instructions",  placeholder: "HIGH VOLTAGE — DO NOT OPEN\nAUTHORIZED PERSONNEL ONLY", xPct: 4, yPct: 40, widthPct: 92, heightPct: 52, align: "center", multiline: true },
     ],
   },
   {
@@ -150,13 +102,7 @@ export const TEMPLATES: Template[] = [
     description: "Clean single text line centered on the plate.",
     compatibleSizes: ["3x1", "4x2", "6x2", "6x3", "9x3", "8x4", "10x4"],
     zones: [
-      {
-        id: "text",
-        label: "Text",
-        placeholder: "MOTOR CONTROL CENTER",
-        xPct: 4, yPct: 18, widthPct: 92, heightPct: 64,
-        align: "center",
-      },
+      { id: "text", label: "Text", placeholder: "MOTOR CONTROL CENTER", xPct: 4, yPct: 18, widthPct: 92, heightPct: 64, align: "center" },
     ],
   },
   {
@@ -165,27 +111,9 @@ export const TEMPLATES: Template[] = [
     description: "Three stacked text rows for detailed labeling.",
     compatibleSizes: ["6x2", "6x3", "9x3", "8x4", "10x4"],
     zones: [
-      {
-        id: "line1",
-        label: "Line 1",
-        placeholder: "ACME INDUSTRIES",
-        xPct: 4, yPct: 5, widthPct: 92, heightPct: 28,
-        align: "center",
-      },
-      {
-        id: "line2",
-        label: "Line 2",
-        placeholder: "UNIT NO. 4 — COMPRESSOR",
-        xPct: 4, yPct: 36, widthPct: 92, heightPct: 28,
-        align: "center",
-      },
-      {
-        id: "line3",
-        label: "Line 3",
-        placeholder: "SN: 00456 / MFG: 2024",
-        xPct: 4, yPct: 67, widthPct: 92, heightPct: 28,
-        align: "center",
-      },
+      { id: "line1", label: "Line 1", placeholder: "ACME INDUSTRIES",          xPct: 4, yPct: 5,  widthPct: 92, heightPct: 28, align: "center" },
+      { id: "line2", label: "Line 2", placeholder: "UNIT NO. 4 — COMPRESSOR",  xPct: 4, yPct: 36, widthPct: 92, heightPct: 28, align: "center" },
+      { id: "line3", label: "Line 3", placeholder: "SN: 00456 / MFG: 2024",    xPct: 4, yPct: 67, widthPct: 92, heightPct: 28, align: "center" },
     ],
   },
 ];
@@ -202,11 +130,16 @@ export const FONT_OPTIONS: FontOption[] = [
 export const FONT_SIZE_OPTIONS = [6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48];
 
 export function defaultZoneConfig(): ZoneConfig {
-  return { text: "", fontId: "arial", fontSize: 14, bold: false, italic: false, hAlign: "center", vAlign: "center" };
+  return {
+    text: "", fontId: "arial", fontSize: 14,
+    bold: false, italic: false,
+    hAlign: "center", vAlign: "center",
+    wordWrap: false,
+  };
 }
 
 /** Approximate capital-letter height in inches for a given point size.
- *  Cap height ≈ 72 % of em; 1 pt = 1/72 in.
+ *  Cap height ≈ 72% of em; 1 pt = 1/72 in.
  */
 export function approxLetterHeightIn(fontSize: number): string {
   return (fontSize * 0.72 / 72).toFixed(3);

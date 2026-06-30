@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { RotateCcw, Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
+import { RotateCcw, Bold, Italic, AlignLeft, AlignCenter, AlignRight, WrapText, AlertTriangle } from "lucide-react";
 import {
   TAG_SIZES, TEMPLATES, FONT_OPTIONS, FONT_SIZE_OPTIONS,
   defaultZoneConfig, approxLetterHeightIn,
@@ -7,23 +7,29 @@ import {
 } from "@/data/templates";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const STEP = 5;       // all height values are multiples of this
-const MIN_H = 10;     // minimum height % per zone
-const SVG_VW = 1000;  // SVG viewBox width (fixed)
+const STEP = 5;        // all height values are multiples of this
+const MIN_H = 10;      // minimum height % per zone
+const SVG_VW = 1000;   // SVG viewBox width (fixed)
+const PAD_RATIO = 0.018;
+const IPAD_RATIO = 0.008;
+
+// ─── Divider types ────────────────────────────────────────────────────────────
+type DividerStyle = "solid" | "dotted" | "dashed";
+interface DividerConfig { enabled: boolean; style: DividerStyle; }
+const defaultDivider = (): DividerConfig => ({ enabled: false, style: "solid" });
+const defaultDividers = (n: number): DividerConfig[] =>
+  Array.from({ length: Math.max(0, n - 1) }, defaultDivider);
+
+// ─── Overflow types ───────────────────────────────────────────────────────────
+interface OverflowInfo { widthOverflow: boolean; heightOverflow: boolean; overflows: boolean; }
 
 // ─── Height helpers ───────────────────────────────────────────────────────────
-
-/** Round to nearest STEP. */
 const snap = (v: number) => Math.round(v / STEP) * STEP;
 
-/**
- * Default equal-split heights for N lines, each a multiple of STEP summing to 100.
- * Remainder is distributed (last zone gets any extra).
- */
 function defaultHeights(n: number): number[] {
   const base = snap(Math.floor(100 / n / STEP) * STEP);
   const arr = Array(n).fill(base);
-  let diff = 100 - arr.reduce((a, b) => a + b, 0);
+  let diff = 100 - arr.reduce((a: number, b: number) => a + b, 0);
   for (let i = arr.length - 1; i >= 0 && diff !== 0; i--) {
     const add = Math.sign(diff) * STEP;
     arr[i] += add;
@@ -32,26 +38,18 @@ function defaultHeights(n: number): number[] {
   return arr;
 }
 
-/**
- * Convert a template's zone heights to 5%-increment values summing to 100.
- * Each zone is clamped to MIN_H minimum.
- */
 function heightsFromTemplate(zones: TextZone[]): number[] {
   const total = zones.reduce((s, z) => s + z.heightPct, 0);
   const raw = zones.map((z) => snap((z.heightPct / total) * 100));
   const diff = 100 - raw.reduce((a, b) => a + b, 0);
-  // Dump rounding drift onto the largest zone
   const biggest = raw.indexOf(Math.max(...raw));
   raw[biggest] = Math.max(MIN_H, raw[biggest] + diff);
   return raw.map((v) => Math.max(MIN_H, v));
 }
 
-/**
- * Build TextZone[] from height percentages (each a multiple of STEP summing to 100).
- * Heights control the proportional allocation of the available text area.
- */
 function computeZones(heights: number[]): TextZone[] {
-  const TOP = 5, BOT = 5, GAP = 2;
+  const TOP = 5, GAP = 2;
+  const BOT = 5;
   const n = heights.length;
   const available = 100 - TOP - BOT - GAP * (n - 1);
   let yOff = TOP;
@@ -69,51 +67,106 @@ function computeZones(heights: number[]): TextZone[] {
   });
 }
 
-/**
- * Adjust one zone's height by `delta` (+5 or -5), stealing from / giving to
- * the most-generous other zone. Returns unchanged array if the move is impossible.
- */
 function adjustOne(heights: number[], idx: number, delta: number): number[] {
   const n = heights.length;
   const proposed = heights[idx] + delta;
   if (proposed < MIN_H || proposed > 100 - MIN_H * (n - 1)) return heights;
-
   const others = [...Array(n).keys()].filter((i) => i !== idx);
-
   if (delta > 0) {
-    // Need to take 5% from another zone — pick the largest one with room
-    const donor = others
-      .filter((i) => heights[i] - STEP >= MIN_H)
-      .sort((a, b) => heights[b] - heights[a])[0];
+    const donor = others.filter((i) => heights[i] - STEP >= MIN_H).sort((a, b) => heights[b] - heights[a])[0];
     if (donor === undefined) return heights;
-    const next = [...heights];
-    next[idx] += STEP;
-    next[donor] -= STEP;
-    return next;
+    const next = [...heights]; next[idx] += STEP; next[donor] -= STEP; return next;
   } else {
-    // Give 5% to another zone — pick the smallest one
     const recipient = others.sort((a, b) => heights[a] - heights[b])[0];
-    const next = [...heights];
-    next[idx] -= STEP;
-    next[recipient] += STEP;
-    return next;
+    const next = [...heights]; next[idx] -= STEP; next[recipient] += STEP; return next;
   }
 }
 
-/**
- * Move the divider between zones `idx` and `idx+1` by `deltaPercent` (pre-snapped).
- * Only those two zones change; their combined total stays constant.
- */
 function moveDivider(heights: number[], idx: number, deltaPercent: number): number[] {
   const combined = heights[idx] + heights[idx + 1];
   const newI = Math.max(MIN_H, Math.min(combined - MIN_H, heights[idx] + deltaPercent));
   const snappedI = snap(newI);
   const snappedNext = combined - snappedI;
-  if (snappedNext < MIN_H) return heights; // can't satisfy constraint
-  const next = [...heights];
-  next[idx] = snappedI;
-  next[idx + 1] = snappedNext;
-  return next;
+  if (snappedNext < MIN_H) return heights;
+  const next = [...heights]; next[idx] = snappedI; next[idx + 1] = snappedNext; return next;
+}
+
+// ─── Word-wrap helper ─────────────────────────────────────────────────────────
+/**
+ * Break `text` (which may contain \n paragraphs) into render lines that fit
+ * within `maxW` SVG units, using canvas measurement at the given font spec.
+ */
+function wrapWords(text: string, fontSpec: string, maxW: number): string[] {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+  ctx.font = fontSpec;
+  const result: string[] = [];
+  for (const para of text.split("\n")) {
+    if (!para.trim()) { result.push(""); continue; }
+    let current = "";
+    for (const word of para.split(" ")) {
+      const test = current ? `${current} ${word}` : word;
+      if (ctx.measureText(test).width <= maxW) {
+        current = test;
+      } else {
+        if (current) result.push(current);
+        current = word;
+      }
+    }
+    if (current) result.push(current);
+  }
+  return result.length ? result : [""];
+}
+
+// ─── Overflow computation ─────────────────────────────────────────────────────
+function computeOverflowMap(
+  zones: TextZone[],
+  lineConfigs: ZoneConfigs,
+  size: TagSize,
+): Record<string, OverflowInfo> {
+  const VW = SVG_VW;
+  const VH = Math.round(VW * size.height / size.width);
+  const PAD = VW * PAD_RATIO;
+  const INNER_PAD = VW * IPAD_RATIO;
+  const innerW = VW - PAD * 2;
+  const innerH = VH - PAD * 2;
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+  const result: Record<string, OverflowInfo> = {};
+
+  for (const zone of zones) {
+    const cfg = lineConfigs[zone.id] ?? defaultZoneConfig();
+    const text = cfg.text.trim();
+    if (!text) { result[zone.id] = { widthOverflow: false, heightOverflow: false, overflows: false }; continue; }
+
+    const zh = (zone.heightPct / 100) * innerH;
+    const zw = (zone.widthPct / 100) * innerW;
+    const availW = zw - 2 * INNER_PAD;
+
+    const svgFontSize = Math.max(10, Math.min(cfg.fontSize * (VW / 100), zh * 0.58));
+    const lineH = svgFontSize * 1.28;
+    const font = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
+    const fontSpec = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgFontSize}px ${font.family}`;
+    ctx.font = fontSpec;
+
+    let renderLines: string[];
+    if (cfg.wordWrap) {
+      renderLines = wrapWords(text, fontSpec, availW);
+    } else {
+      renderLines = text.split("\n");
+    }
+
+    const maxLineW = Math.max(...renderLines.map((l) => ctx.measureText(l || " ").width));
+    const totalH = renderLines.length * lineH;
+
+    // For word-wrap mode, lines are fitted to width — only height can overflow.
+    // For no-wrap mode, either dimension can overflow.
+    const widthOverflow = !cfg.wordWrap && maxLineW > availW;
+    const heightOverflow = totalH > zh;
+    result[zone.id] = { widthOverflow, heightOverflow, overflows: widthOverflow || heightOverflow };
+  }
+  return result;
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
@@ -121,11 +174,18 @@ function moveDivider(heights: number[], idx: number, deltaPercent: number): numb
 export default function Designer() {
   const [selectedSize, setSelectedSize] = useState<TagSize | null>(null);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
-  const [heights, setHeights] = useState<number[]>([100]);       // 5%-increment %s summing to 100
+  const [heights, setHeights] = useState<number[]>([100]);
   const [lineConfigs, setLineConfigs] = useState<ZoneConfigs>({ line1: defaultZoneConfig() });
+  const [dividers, setDividers] = useState<DividerConfig[]>([]);
 
   const zones = useMemo(() => computeZones(heights), [heights]);
   const numLines = heights.length;
+
+  const overflowMap = useMemo<Record<string, OverflowInfo>>(
+    () => selectedSize ? computeOverflowMap(zones, lineConfigs, selectedSize) : {},
+    [zones, lineConfigs, selectedSize],
+  );
+  const hasOverflow = Object.values(overflowMap).some((v) => v.overflows);
 
   const compatibleTemplates = selectedSize
     ? TEMPLATES.filter((t) => t.compatibleSizes.includes(selectedSize.id))
@@ -136,16 +196,16 @@ export default function Designer() {
     setActiveTemplateId(null);
     setHeights([100]);
     setLineConfigs({ line1: defaultZoneConfig() });
+    setDividers([]);
   }
 
-  function selectBlank() {
-    setActiveTemplateId(null);
-  }
+  function selectBlank() { setActiveTemplateId(null); }
 
   function selectTemplate(template: Template) {
     setActiveTemplateId(template.id);
     const h = heightsFromTemplate(template.zones);
     setHeights(h);
+    setDividers(defaultDividers(h.length));
     const cfg: ZoneConfigs = {};
     template.zones.forEach((_, i) => {
       const id = `line${i + 1}`;
@@ -159,12 +219,11 @@ export default function Designer() {
     const h = defaultHeights(n);
     const oldVals = Object.values(lineConfigs);
     const cfg: ZoneConfigs = {};
-    h.forEach((_, i) => {
-      const id = `line${i + 1}`;
-      cfg[id] = oldVals[i] ?? defaultZoneConfig();
-    });
+    h.forEach((_, i) => { const id = `line${i + 1}`; cfg[id] = oldVals[i] ?? defaultZoneConfig(); });
     setHeights(h);
     setLineConfigs(cfg);
+    // Preserve existing dividers where possible
+    setDividers((prev) => Array.from({ length: n - 1 }, (_, i) => prev[i] ?? defaultDivider()));
   }
 
   function adjustHeight(idx: number, delta: number) {
@@ -179,6 +238,14 @@ export default function Designer() {
 
   function updateZone(zoneId: string, patch: Partial<ZoneConfig>) {
     setLineConfigs((prev) => ({ ...prev, [zoneId]: { ...prev[zoneId], ...patch } }));
+  }
+
+  function updateDivider(idx: number, patch: Partial<DividerConfig>) {
+    setDividers((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
   }
 
   if (!selectedSize) return <SizePicker onPick={pickSize} />;
@@ -200,11 +267,8 @@ export default function Designer() {
             <span className="font-mono text-xs text-slate-300 bg-slate-700 rounded px-2 py-0.5">
               {selectedSize.label} · Landscape · Black Anodized Aluminum
             </span>
-            <button
-              data-testid="button-change-size"
-              onClick={() => setSelectedSize(null)}
-              className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors whitespace-nowrap"
-            >
+            <button data-testid="button-change-size" onClick={() => setSelectedSize(null)}
+              className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors whitespace-nowrap">
               <RotateCcw size={11} /> Change Size
             </button>
           </div>
@@ -215,44 +279,31 @@ export default function Designer() {
       <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
         {/* LEFT */}
         <aside className="lg:w-44 xl:w-52 flex-shrink-0 border-b lg:border-b-0 lg:border-r border-border overflow-y-auto bg-muted/20" style={{ minHeight: 0 }}>
-          <TemplatePanel
-            size={selectedSize}
-            templates={compatibleTemplates}
-            activeTemplateId={activeTemplateId}
-            onBlank={selectBlank}
-            onTemplate={selectTemplate}
-          />
+          <TemplatePanel size={selectedSize} templates={compatibleTemplates}
+            activeTemplateId={activeTemplateId} onBlank={selectBlank} onTemplate={selectTemplate} />
         </aside>
 
         {/* CENTER */}
         <div className="flex-1 flex items-center justify-center overflow-hidden bg-[hsl(220_20%_8%)] p-4 lg:p-8" style={{ minHeight: "180px", minWidth: 0 }}>
-          <PlatePreview
-            size={selectedSize}
-            zones={zones}
-            lineConfigs={lineConfigs}
-            heights={heights}
-            onHeightsChange={handleHeightsChange}
-          />
+          <PlatePreview size={selectedSize} zones={zones} lineConfigs={lineConfigs}
+            heights={heights} dividers={dividers} overflowMap={overflowMap}
+            onHeightsChange={handleHeightsChange} />
         </div>
 
         {/* RIGHT */}
         <aside className="lg:w-72 xl:w-80 flex-shrink-0 border-t lg:border-t-0 lg:border-l border-border overflow-y-auto bg-background" style={{ minHeight: 0 }}>
-          <CustomizePanel
-            zones={zones}
-            lineConfigs={lineConfigs}
-            numLines={numLines}
-            heights={heights}
-            onChangeNumLines={changeNumLines}
-            onAdjustHeight={adjustHeight}
-            onUpdateZone={updateZone}
-          />
+          <CustomizePanel zones={zones} lineConfigs={lineConfigs} numLines={numLines}
+            heights={heights} dividers={dividers} overflowMap={overflowMap}
+            hasOverflow={hasOverflow}
+            onChangeNumLines={changeNumLines} onAdjustHeight={adjustHeight}
+            onUpdateZone={updateZone} onUpdateDivider={updateDivider} />
         </aside>
       </div>
     </div>
   );
 }
 
-// ─── Step 1: Size picker ──────────────────────────────────────────────────────
+// ─── Size picker ──────────────────────────────────────────────────────────────
 
 function SizePicker({ onPick }: { onPick: (s: TagSize) => void }) {
   return (
@@ -298,18 +349,16 @@ function SizePicker({ onPick }: { onPick: (s: TagSize) => void }) {
   );
 }
 
-// ─── Left panel ───────────────────────────────────────────────────────────────
+// ─── Left panel: templates ────────────────────────────────────────────────────
 
 function TemplatePanel({ size, templates, activeTemplateId, onBlank, onTemplate }: {
-  size: TagSize; templates: Template[];
-  activeTemplateId: string | null;
+  size: TagSize; templates: Template[]; activeTemplateId: string | null;
   onBlank: () => void; onTemplate: (t: Template) => void;
 }) {
   const isBlankActive = activeTemplateId === null;
   return (
     <div className="p-2">
       <p className="px-2 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Templates</p>
-
       <button data-testid="button-template-blank" onClick={onBlank}
         className={`w-full rounded mb-1 p-2 text-left transition-all border ${isBlankActive ? "border-primary bg-primary/10" : "border-transparent hover:border-border hover:bg-muted/50"}`}>
         <div className="mb-1.5 w-full rounded" style={{
@@ -320,7 +369,6 @@ function TemplatePanel({ size, templates, activeTemplateId, onBlank, onTemplate 
         <p className={`text-xs font-semibold ${isBlankActive ? "text-primary" : "text-foreground"}`}>Blank</p>
         <p className="text-[10px] text-muted-foreground">Start from scratch</p>
       </button>
-
       {templates.map((t) => {
         const isActive = activeTemplateId === t.id;
         const W = 160, H = Math.max(18, Math.round(W * size.height / size.width));
@@ -352,20 +400,21 @@ function TemplatePanel({ size, templates, activeTemplateId, onBlank, onTemplate 
   );
 }
 
-// ─── Center: interactive plate preview ────────────────────────────────────────
+// ─── Center: live SVG plate preview ──────────────────────────────────────────
 
-function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
+function PlatePreview({ size, zones, lineConfigs, heights, dividers, overflowMap, onHeightsChange }: {
   size: TagSize; zones: TextZone[]; lineConfigs: ZoneConfigs;
-  heights: number[]; onHeightsChange: (h: number[]) => void;
+  heights: number[]; dividers: DividerConfig[];
+  overflowMap: Record<string, OverflowInfo>;
+  onHeightsChange: (h: number[]) => void;
 }) {
   const VW = SVG_VW;
   const VH = Math.round(VW * size.height / size.width);
-  const PAD = VW * 0.018;
-  const INNER_PAD = VW * 0.008;
+  const PAD = VW * PAD_RATIO;
+  const INNER_PAD = VW * IPAD_RATIO;
   const innerW = VW - PAD * 2;
   const innerH = VH - PAD * 2;
 
-  // Available text-area height in SVG units (excluding top/bottom padding and gaps)
   const n = heights.length;
   const TOP_PCT = 5, BOT_PCT = 5, GAP_PCT = 2;
   const availPct = 100 - TOP_PCT - BOT_PCT - GAP_PCT * (n - 1);
@@ -387,33 +436,20 @@ function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
     function onMouseMove(e: MouseEvent) {
       if (!dragRef.current || !svgRef.current) return;
       const { idx, startClientY, startHeights } = dragRef.current;
-
       const svgRect = svgRef.current.getBoundingClientRect();
-      // Convert pixel delta → SVG units → percentage of available text area
       const svgDeltaY = (e.clientY - startClientY) * (VH / svgRect.height);
       const rawPctDelta = (svgDeltaY / availH) * 100;
-      // Snap to nearest 5%
       const snappedDelta = snap(rawPctDelta);
       if (snappedDelta === 0) return;
-
       const moved = moveDivider(startHeights, idx, snappedDelta);
       if (moved !== startHeights) onHeightsChange(moved);
     }
-
-    function onMouseUp() {
-      dragRef.current = null;
-      setDraggingIdx(null);
-    }
-
+    function onMouseUp() { dragRef.current = null; setDraggingIdx(null); }
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
+    return () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
   }, [VH, availH, onHeightsChange]);
 
-  // Pre-compute zone rects in SVG viewBox units
   const rects = zones.map((zone) => ({
     zone,
     zx: PAD + (zone.xPct / 100) * innerW,
@@ -423,12 +459,9 @@ function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
   }));
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${VW} ${VH}`}
+    <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
       style={{ width: "100%", height: "100%", maxWidth: `${VW}px`, display: "block", userSelect: "none" }}
-      preserveAspectRatio="xMidYMid meet"
-    >
+      preserveAspectRatio="xMidYMid meet">
       <defs>
         <linearGradient id="pb" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%"   stopColor="hsl(220, 18%, 20%)" />
@@ -439,9 +472,15 @@ function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
           <stop offset="0%"  stopColor="rgba(255,255,255,0.07)" />
           <stop offset="45%" stopColor="rgba(255,255,255,0)" />
         </linearGradient>
+        {/* Clip paths so text/dividers stay inside each zone */}
+        {rects.map(({ zone, zx, zy, zw, zh }) => (
+          <clipPath key={`clip-${zone.id}`} id={`clip-${zone.id}`}>
+            <rect x={zx} y={zy} width={zw} height={zh} />
+          </clipPath>
+        ))}
       </defs>
 
-      {/* Plate */}
+      {/* Plate body */}
       <rect x={0} y={0} width={VW} height={VH} rx={VW * 0.008} fill="url(#pb)" />
       <rect x={0} y={0} width={VW} height={VH} rx={VW * 0.008} fill="url(#ps)" />
       <rect x={1.5} y={1.5} width={VW - 3} height={VH - 3} rx={VW * 0.007}
@@ -449,15 +488,22 @@ function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
       <rect x={5} y={5} width={VW - 10} height={VH - 10} rx={VW * 0.005}
         fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={VW * 0.002} />
 
-      {/* Zone rects + text */}
+      {/* Zone backgrounds + text */}
       {rects.map(({ zone, zx, zy, zw, zh }) => {
         const cfg = lineConfigs[zone.id] ?? defaultZoneConfig();
         const font = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
         const displayText = cfg.text || zone.placeholder;
         const isPlaceholder = !cfg.text;
-        const lines = displayText.split("\n");
+
         const clampedSize = Math.max(10, Math.min(cfg.fontSize * (VW / 100), zh * 0.58));
         const lineH = clampedSize * 1.28;
+        const availTextW = zw - 2 * INNER_PAD;
+        const fontSpec = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${clampedSize}px ${font.family}`;
+
+        const lines: string[] = (!isPlaceholder && cfg.wordWrap)
+          ? wrapWords(displayText, fontSpec, availTextW)
+          : displayText.split("\n");
+
         const totalTH = lines.length * lineH;
 
         let textX: number;
@@ -471,49 +517,92 @@ function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
         else if (cfg.vAlign === "bottom") baseY = zy + zh - totalTH + clampedSize * 0.85 - INNER_PAD;
         else                              baseY = zy + zh / 2 - totalTH / 2 + clampedSize * 0.85;
 
+        const ov = overflowMap[zone.id];
+        const overflows = ov?.overflows ?? false;
+
         return (
           <g key={zone.id}>
+            {/* Zone background */}
             <rect x={zx} y={zy} width={zw} height={zh}
               fill="hsl(215, 22%, 16%)"
-              stroke={isPlaceholder ? "hsl(215, 22%, 32%)" : "hsl(215, 22%, 42%)"}
-              strokeWidth={VW * 0.0012}
-              strokeDasharray={isPlaceholder ? `${VW * 0.005},${VW * 0.003}` : "0"}
+              stroke={overflows ? "hsl(0, 84%, 58%)" : isPlaceholder ? "hsl(215, 22%, 32%)" : "hsl(215, 22%, 42%)"}
+              strokeWidth={overflows ? VW * 0.004 : VW * 0.0012}
+              strokeDasharray={isPlaceholder && !overflows ? `${VW * 0.005},${VW * 0.003}` : "0"}
               rx={VW * 0.004} />
-            {lines.map((line, i) => (
-              <text key={i} x={textX} y={baseY + i * lineH}
-                textAnchor={anchor} fontFamily={font.family} fontSize={clampedSize}
-                fontWeight={cfg.bold ? 700 : 400} fontStyle={cfg.italic ? "italic" : "normal"}
-                fill={isPlaceholder ? "hsl(215, 12%, 44%)" : "hsl(210, 55%, 88%)"}
-                style={{ userSelect: "none" }}>
-                {line}
-              </text>
-            ))}
+
+            {/* Overflow tint */}
+            {overflows && (
+              <rect x={zx} y={zy} width={zw} height={zh}
+                fill="rgba(239,68,68,0.10)" rx={VW * 0.004}
+                style={{ pointerEvents: "none" }} />
+            )}
+
+            {/* Text (clipped to zone) */}
+            <g clipPath={`url(#clip-${zone.id})`}>
+              {lines.map((line, i) => (
+                <text key={i} x={textX} y={baseY + i * lineH}
+                  textAnchor={anchor} fontFamily={font.family} fontSize={clampedSize}
+                  fontWeight={cfg.bold ? 700 : 400} fontStyle={cfg.italic ? "italic" : "normal"}
+                  fill={isPlaceholder ? "hsl(215, 12%, 44%)" : "hsl(210, 55%, 88%)"}
+                  style={{ userSelect: "none" }}>
+                  {line}
+                </text>
+              ))}
+            </g>
+
+            {/* Overflow badge */}
+            {overflows && (
+              <g style={{ pointerEvents: "none" }}>
+                <rect x={zx + zw - 112} y={zy + 5} width={107} height={19} rx={9.5}
+                  fill="hsl(0, 84%, 52%)" />
+                <text x={zx + zw - 58.5} y={zy + 17.5}
+                  textAnchor="middle" fontSize={11} fill="white"
+                  fontFamily="system-ui, sans-serif" fontWeight={600}
+                  style={{ userSelect: "none" }}>
+                  ⚠ Text overflow
+                </text>
+              </g>
+            )}
           </g>
         );
       })}
 
-      {/* Draggable dividers between zones */}
-      {n > 1 && rects.slice(0, -1).map(({ zx, zy, zw, zh }, i) => {
+      {/* User-configured divider lines (drawn in zone gaps) */}
+      {n > 1 && rects.slice(0, -1).map(({ zone, zx, zy, zw, zh }, i) => {
+        const next = rects[i + 1];
+        const midY = (zy + zh + next.zy) / 2;
+        const div = dividers[i];
+        if (!div?.enabled) return null;
+        const dArr =
+          div.style === "dotted" ? `${VW * 0.003},${VW * 0.009}` :
+          div.style === "dashed" ? `${VW * 0.022},${VW * 0.011}` : "none";
+        return (
+          <line key={`divline-${i}`}
+            x1={zx + INNER_PAD} y1={midY} x2={zx + zw - INNER_PAD} y2={midY}
+            stroke="hsl(210, 35%, 68%)" strokeWidth={VW * 0.0032}
+            strokeDasharray={dArr} strokeLinecap="round"
+            style={{ pointerEvents: "none" }} />
+        );
+      })}
+
+      {/* Draggable height-divider handles (UI overlay) */}
+      {n > 1 && rects.slice(0, -1).map(({ zone, zx, zy, zw, zh }, i) => {
         const next = rects[i + 1];
         const midY = (zy + zh + next.zy) / 2;
         const active = hoveredDivider === i || draggingIdx === i;
         const lineColor = active ? "hsl(24, 95%, 53%)" : "hsl(220, 18%, 44%)";
         const pillFill = active ? "hsl(24, 95%, 53%)" : "hsl(220, 20%, 30%)";
         const pillW = 70, pillH = 15;
-
         return (
-          <g key={`div-${i}`} style={{ cursor: "ns-resize" }}
+          <g key={`hdl-${i}`} style={{ cursor: "ns-resize" }}
             onPointerDown={(e) => onDividerPointerDown(i, e)}
             onMouseEnter={() => setHoveredDivider(i)}
             onMouseLeave={() => setHoveredDivider(null)}>
-            {/* Wide invisible hit zone */}
             <rect x={zx} y={midY - 12} width={zw} height={24} fill="transparent" style={{ cursor: "ns-resize" }} />
-            {/* Guide line */}
             <line x1={zx} y1={midY} x2={zx + zw} y2={midY}
               stroke={lineColor} strokeWidth={active ? 2.5 : 1.5}
               strokeDasharray={active ? "0" : "6,4"} strokeOpacity={active ? 1 : 0.55}
               style={{ pointerEvents: "none" }} />
-            {/* Pill handle */}
             <rect x={zx + zw / 2 - pillW / 2} y={midY - pillH / 2}
               width={pillW} height={pillH} rx={pillH / 2}
               fill={pillFill} style={{ pointerEvents: "none" }} />
@@ -531,15 +620,20 @@ function PlatePreview({ size, zones, lineConfigs, heights, onHeightsChange }: {
 
 // ─── Right panel ──────────────────────────────────────────────────────────────
 
-function CustomizePanel({ zones, lineConfigs, numLines, heights, onChangeNumLines, onAdjustHeight, onUpdateZone }: {
+function CustomizePanel({ zones, lineConfigs, numLines, heights, dividers, overflowMap,
+  hasOverflow, onChangeNumLines, onAdjustHeight, onUpdateZone, onUpdateDivider }: {
   zones: TextZone[]; lineConfigs: ZoneConfigs;
   numLines: number; heights: number[];
+  dividers: DividerConfig[]; overflowMap: Record<string, OverflowInfo>;
+  hasOverflow: boolean;
   onChangeNumLines: (n: number) => void;
   onAdjustHeight: (idx: number, delta: number) => void;
   onUpdateZone: (id: string, patch: Partial<ZoneConfig>) => void;
+  onUpdateDivider: (idx: number, patch: Partial<DividerConfig>) => void;
 }) {
   return (
-    <div className="p-3 space-y-4">
+    <div className="p-3 space-y-4 pb-4">
+      {/* Line count selector */}
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Lines of Text</p>
         <div className="flex gap-1.5">
@@ -557,39 +651,136 @@ function CustomizePanel({ zones, lineConfigs, numLines, heights, onChangeNumLine
 
       <div className="border-t border-border" />
 
+      {/* Zone editors, with divider controls inserted between them */}
       {zones.map((zone, idx) => (
-        <ZoneEditor
-          key={zone.id}
-          zone={zone}
-          idx={idx}
-          heightPct={heights[idx] ?? 0}
-          showHeightControl={numLines > 1}
-          cfg={lineConfigs[zone.id] ?? defaultZoneConfig()}
-          onUpdate={(patch) => onUpdateZone(zone.id, patch)}
-          onAdjustHeight={(delta) => onAdjustHeight(idx, delta)}
-        />
+        <div key={zone.id}>
+          <ZoneEditor zone={zone} idx={idx}
+            heightPct={heights[idx] ?? 0}
+            showHeightControl={numLines > 1}
+            cfg={lineConfigs[zone.id] ?? defaultZoneConfig()}
+            overflowInfo={overflowMap[zone.id]}
+            onUpdate={(patch) => onUpdateZone(zone.id, patch)}
+            onAdjustHeight={(delta) => onAdjustHeight(idx, delta)} />
+
+          {/* Divider control after each zone except the last */}
+          {idx < zones.length - 1 && dividers[idx] !== undefined && (
+            <DividerControl idx={idx} config={dividers[idx]} onUpdate={(p) => onUpdateDivider(idx, p)} />
+          )}
+        </div>
       ))}
+
+      {/* Continue / submit button */}
+      <div className="pt-2 border-t border-border">
+        <button
+          data-testid="button-continue"
+          disabled={hasOverflow}
+          title={hasOverflow ? "Fix text overflow before continuing" : undefined}
+          className={`w-full rounded py-2.5 text-sm font-bold transition-all ${
+            hasOverflow
+              ? "bg-muted text-muted-foreground cursor-not-allowed border border-border"
+              : "bg-primary text-white hover:bg-primary/90 active:scale-[0.98]"
+          }`}>
+          {hasOverflow ? "Fix overflow to continue" : "Continue to Order →"}
+        </button>
+        {hasOverflow && (
+          <p className="mt-1.5 text-center text-[10px] text-red-500 leading-snug">
+            One or more lines overflow their zone.<br />
+            Reduce text, lower font size, enable word wrap, or increase line height.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Divider control (between zone cards) ─────────────────────────────────────
+
+function DividerControl({ idx, config, onUpdate }: {
+  idx: number; config: DividerConfig;
+  onUpdate: (patch: Partial<DividerConfig>) => void;
+}) {
+  const STYLES: { value: DividerStyle; label: string }[] = [
+    { value: "solid",  label: "Solid" },
+    { value: "dotted", label: "Dotted" },
+    { value: "dashed", label: "Dashed" },
+  ];
+  return (
+    <div className="mx-1 my-1.5 rounded border border-dashed border-border bg-muted/30 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Divider line
+        </span>
+        <button
+          data-testid={`button-divider-toggle-${idx}`}
+          onClick={() => onUpdate({ enabled: !config.enabled })}
+          className={`flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-bold transition-all ${
+            config.enabled
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-background text-muted-foreground hover:border-primary"
+          }`}>
+          {config.enabled ? "On" : "Off"}
+        </button>
+      </div>
+
+      {config.enabled && (
+        <div className="mt-2 flex items-center gap-1.5">
+          {STYLES.map(({ value, label }) => (
+            <button key={value}
+              data-testid={`button-divider-style-${value}-${idx}`}
+              onClick={() => onUpdate({ style: value })}
+              className={`flex-1 rounded border py-0.5 text-[10px] font-semibold transition-all ${
+                config.style === value
+                  ? "border-primary bg-primary text-white"
+                  : "border-border bg-background text-foreground hover:border-primary"
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Visual preview of the selected style */}
+      {config.enabled && (
+        <svg width="100%" height={10} className="mt-2 overflow-visible">
+          <line x1={0} y1={5} x2="100%" y2={5}
+            stroke="hsl(210, 35%, 60%)" strokeWidth={1.5}
+            strokeDasharray={
+              config.style === "dotted" ? "3,5" :
+              config.style === "dashed" ? "10,6" : "none"
+            }
+            strokeLinecap="round" />
+        </svg>
+      )}
     </div>
   );
 }
 
 // ─── Per-zone editor ──────────────────────────────────────────────────────────
 
-function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, onUpdate, onAdjustHeight }: {
+function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, overflowInfo, onUpdate, onAdjustHeight }: {
   zone: TextZone; idx: number; heightPct: number;
   showHeightControl: boolean;
   cfg: ZoneConfig;
+  overflowInfo: OverflowInfo | undefined;
   onUpdate: (patch: Partial<ZoneConfig>) => void;
   onAdjustHeight: (delta: number) => void;
 }) {
   const font = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
   const letterHeight = approxLetterHeightIn(cfg.fontSize);
+  const ov = overflowInfo;
+  const overflows = ov?.overflows ?? false;
+
+  // Show textarea when zone is template-multiline OR word wrap is on
+  const showTextarea = zone.multiline || cfg.wordWrap;
 
   return (
-    <div className="rounded border border-border bg-card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border bg-muted/50 px-3 py-1.5">
+    <div className={`rounded border overflow-hidden ${overflows ? "border-red-500/60" : "border-border"} bg-card`}>
+      {/* Card header */}
+      <div className={`flex items-center justify-between border-b px-3 py-1.5 ${overflows ? "border-red-500/30 bg-red-500/5" : "border-border bg-muted/50"}`}>
         <div className="flex items-center gap-2">
-          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/20 text-[9px] font-black text-primary flex-shrink-0">{idx + 1}</span>
+          <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black flex-shrink-0 ${overflows ? "bg-red-500/20 text-red-500" : "bg-primary/20 text-primary"}`}>
+            {overflows ? <AlertTriangle size={8} /> : idx + 1}
+          </span>
           <span className="text-xs font-semibold text-foreground">{zone.label}</span>
         </div>
         {showHeightControl && (
@@ -611,22 +802,34 @@ function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, onUpdate, on
       </div>
 
       <div className="p-3 space-y-2.5">
-        {zone.multiline ? (
+        {/* Text input */}
+        {showTextarea ? (
           <textarea data-testid={`input-zone-${zone.id}`} rows={2}
             value={cfg.text} onChange={(e) => onUpdate({ text: e.target.value })}
             placeholder={zone.placeholder}
-            className="w-full rounded border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none resize-none"
-            style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }}
-          />
+            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none resize-none bg-background ${overflows ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary"}`}
+            style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }} />
         ) : (
           <input data-testid={`input-zone-${zone.id}`} type="text"
             value={cfg.text} onChange={(e) => onUpdate({ text: e.target.value })}
             placeholder={zone.placeholder}
-            className="w-full rounded border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none"
-            style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }}
-          />
+            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none bg-background ${overflows ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary"}`}
+            style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }} />
         )}
 
+        {/* Overflow warning */}
+        {overflows && (
+          <div className="flex items-start gap-1.5 rounded bg-red-500/10 border border-red-500/30 px-2 py-1.5">
+            <AlertTriangle size={11} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <p className="text-[10px] text-red-500 leading-snug">
+              {ov?.widthOverflow && !ov?.heightOverflow && "Text is too wide for this zone. Shorten text, lower font size, or enable word wrap."}
+              {ov?.heightOverflow && !ov?.widthOverflow && "Text is too tall for this zone. Shorten text, lower font size, or increase line height."}
+              {ov?.widthOverflow && ov?.heightOverflow && "Text overflows in both dimensions. Shorten text or lower font size."}
+            </p>
+          </div>
+        )}
+
+        {/* Font family */}
         <Sel testId={`select-font-${zone.id}`} value={cfg.fontId}
           onChange={(v) => onUpdate({ fontId: v })} style={{ fontFamily: font.family }}>
           {FONT_OPTIONS.map((f) => (
@@ -634,6 +837,7 @@ function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, onUpdate, on
           ))}
         </Sel>
 
+        {/* Font size + Bold + Italic + Word Wrap */}
         <div className="flex items-center gap-1.5">
           <div className="flex flex-col gap-0.5 flex-shrink-0">
             <Sel testId={`select-fontsize-${zone.id}`} value={String(cfg.fontSize)}
@@ -650,8 +854,11 @@ function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, onUpdate, on
             onClick={() => onUpdate({ bold: !cfg.bold })}><Bold size={11} /></ToggleBtn>
           <ToggleBtn testId={`button-italic-${zone.id}`} active={cfg.italic} title="Italic"
             onClick={() => onUpdate({ italic: !cfg.italic })}><Italic size={11} /></ToggleBtn>
+          <ToggleBtn testId={`button-wordwrap-${zone.id}`} active={cfg.wordWrap} title="Word Wrap"
+            onClick={() => onUpdate({ wordWrap: !cfg.wordWrap })}><WrapText size={11} /></ToggleBtn>
         </div>
 
+        {/* H-align */}
         <div className="flex items-center gap-1">
           <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground w-4">H</span>
           {(["left", "center", "right"] as const).map((v) => {
@@ -665,6 +872,7 @@ function ZoneEditor({ zone, idx, heightPct, showHeightControl, cfg, onUpdate, on
           })}
         </div>
 
+        {/* V-align */}
         <div className="flex items-center gap-1">
           <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground w-4">V</span>
           {(["top", "center", "bottom"] as const).map((v) => (
