@@ -18,13 +18,12 @@ import {
 } from "@/data/templates";
 
 interface CsvRow {
-  rowNum: number;            // 1-based row number from the CSV file
-  texts: string[];           // parsed column values
-  lineConfigs: ZoneConfigs;  // built from base configs with texts applied
-  /** Text spills past its segment boundary — non-blocking warning. */
-  hasSegmentOverflow: boolean;
-  /** Text physically extends past the nameplate edge — hard-blocks this row. */
-  hasPlateBoundaryOverflow: boolean;
+  rowNum: number;           // 1-based row number from the CSV file
+  texts: string[];          // parsed column values
+  lineConfigs: ZoneConfigs; // built from base configs with texts applied
+  hasOverflow: boolean;          // any overflow (segment or plate)
+  hasSegmentOverflow: boolean;   // overflows zone but stays within plate boundary
+  hasPlateBoundaryOverflow: boolean; // extends outside the physical plate — hard block
 }
 
 interface Props {
@@ -119,10 +118,14 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
         const texts = cols.slice(0, 10); // max 10 fields
         const lc    = buildRowConfigs(texts, baseLineConfigs, zones);
         const ov    = computeOverflowMap(zones, lc, size);
+        const hasOv       = Object.values(ov).some((v) => v.overflows);
+        const hasPlateOv  = Object.values(ov).some((v) => v.plateBoundaryOverflow);
+        const hasSegOv    = hasOv && !hasPlateOv;
         return {
           rowNum: idx + 1, texts, lineConfigs: lc,
-          hasSegmentOverflow:      Object.values(ov).some((v) => v.overflows),
-          hasPlateBoundaryOverflow: Object.values(ov).some((v) => v.plateBoundaryOverflow),
+          hasOverflow: hasOv,
+          hasSegmentOverflow: hasSegOv,
+          hasPlateBoundaryOverflow: hasPlateOv,
         };
       });
       setRows(built);
@@ -136,16 +139,15 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
     processFile(files[0]);
   }
 
-  const anySegmentOverflow      = rows?.some((r) => r.hasSegmentOverflow && !r.hasPlateBoundaryOverflow) ?? false;
   const anyPlateBoundaryOverflow = rows?.some((r) => r.hasPlateBoundaryOverflow) ?? false;
-  // Rows accepted = all rows except those that physically overflow the plate edge
-  const validCount  = rows?.filter((r) => !r.hasPlateBoundaryOverflow).length ?? 0;
-  const blockedCount = rows?.filter((r) => r.hasPlateBoundaryOverflow).length ?? 0;
-  const totalCount  = rows?.length ?? 0;
+  const anySegmentOverflow       = rows?.some((r) => r.hasSegmentOverflow) ?? false;
+  const validCount    = rows?.filter((r) => !r.hasPlateBoundaryOverflow).length ?? 0;
+  const totalCount    = rows?.length ?? 0;
+  const blockedCount  = rows?.filter((r) => r.hasPlateBoundaryOverflow).length ?? 0;
 
   function handleAccept() {
     if (!rows) return;
-    // Include segment-overflow rows (warning only). Exclude plate-boundary rows.
+    // Only exclude rows that exceed the plate boundary; segment-overflow rows are allowed
     const items = rows
       .filter((r) => !r.hasPlateBoundaryOverflow)
       .map((r): Omit<CartItem, "id" | "addedAt" | "batchId"> => ({
@@ -237,21 +239,21 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
         {rows && rows.length > 0 && (
           <div className="mx-auto max-w-5xl px-6 py-6">
             {/* Summary bar */}
-            <div className="flex items-center gap-4 mb-5">
+            <div className="flex items-center gap-4 mb-5 flex-wrap">
               <span className="text-sm text-slate-400">
                 <span className="font-semibold text-slate-200">{totalCount}</span> nameplates from{" "}
                 <span className="font-mono text-slate-300 text-xs">{fileName}</span>
               </span>
-              {anyPlateBoundaryOverflow && (
+                  {anyPlateBoundaryOverflow && (
                 <span className="flex items-center gap-1.5 text-sm text-red-400">
                   <AlertTriangle size={14} />
-                  {blockedCount} row{blockedCount !== 1 ? "s" : ""} exceed the plate boundary — excluded
+                  {blockedCount} row{blockedCount !== 1 ? "s" : ""} exceed plate boundary — excluded from cart
                 </span>
               )}
               {anySegmentOverflow && (
                 <span className="flex items-center gap-1.5 text-sm text-amber-400">
                   <AlertTriangle size={14} />
-                  {rows!.filter(r => r.hasSegmentOverflow && !r.hasPlateBoundaryOverflow).length} row{rows!.filter(r => r.hasSegmentOverflow && !r.hasPlateBoundaryOverflow).length !== 1 ? "s" : ""} overflow a segment — included with warning
+                  Some rows overflow their segment zone — included with a warning
                 </span>
               )}
               <button
@@ -269,11 +271,7 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
                   key={row.rowNum}
                   className={`
                     rounded-md border overflow-hidden bg-[hsl(220_20%_11%)]
-                    ${row.hasPlateBoundaryOverflow
-                      ? "border-red-600/60"
-                      : row.hasSegmentOverflow
-                        ? "border-amber-600/60"
-                        : "border-slate-700"}
+                    ${row.hasPlateBoundaryOverflow ? "border-red-600/60" : row.hasSegmentOverflow ? "border-amber-600/60" : "border-slate-700"}
                   `}
                 >
                   {/* Plate preview */}
@@ -294,11 +292,11 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
                       {row.texts.filter(Boolean).join(" · ") || <em className="text-slate-600">empty</em>}
                     </div>
                     {row.hasPlateBoundaryOverflow ? (
-                      <span title="Text exceeds the plate boundary — this row will be excluded">
+                      <span title="Text exceeds plate boundary — will be excluded from cart">
                         <AlertTriangle size={14} className="text-red-500 shrink-0" />
                       </span>
                     ) : row.hasSegmentOverflow ? (
-                      <span title="Text overflows its segment but fits on the plate — will be included with a warning">
+                      <span title="Text overflows segment zone but fits on the plate — included in cart">
                         <AlertTriangle size={14} className="text-amber-500 shrink-0" />
                       </span>
                     ) : (
@@ -330,12 +328,12 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
           <div className="flex-1" />
           {anyPlateBoundaryOverflow && (
             <p className="text-xs text-red-400">
-              {blockedCount} row{blockedCount !== 1 ? "s" : ""} exceed the plate edge and will be skipped.
+              {blockedCount} plate-boundary row{blockedCount !== 1 ? "s" : ""} will be skipped.
             </p>
           )}
-          {anySegmentOverflow && (
+          {anySegmentOverflow && !anyPlateBoundaryOverflow && (
             <p className="text-xs text-amber-400">
-              {rows!.filter(r => r.hasSegmentOverflow && !r.hasPlateBoundaryOverflow).length} row{rows!.filter(r => r.hasSegmentOverflow && !r.hasPlateBoundaryOverflow).length !== 1 ? "s" : ""} overflow a segment — included with ⚠ warning.
+              Segment-overflow rows included — text fits within the plate.
             </p>
           )}
           <button

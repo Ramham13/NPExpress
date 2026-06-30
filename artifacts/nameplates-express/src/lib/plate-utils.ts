@@ -301,42 +301,56 @@ export function computeOverflowMap(
     const fontSpec = `${cfg.italic ? "italic " : ""}${cfg.bold ? "bold " : ""}${svgPt}px ${font.family}`;
     ctx.font = fontSpec;
     const renderLines = cfg.wordWrap ? wrapWords(text, fontSpec, zw) : text.split("\n");
-    const maxLineW    = Math.max(...renderLines.map((l) => ctx.measureText(l || " ").width));
-    const totalH      = renderLines.length * lineH;
+
+    // Pixel-accurate vertical metrics (cap height & descender)
+    let capH = svgPt * 0.72;
+    let descH = svgPt * 0.20;
+    const sample = renderLines.filter(Boolean).join(" ") || "M";
+    const m = ctx.measureText(sample);
+    if (m.actualBoundingBoxAscent > 0) capH = m.actualBoundingBoxAscent;
+    if (m.actualBoundingBoxDescent >= 0) descH = m.actualBoundingBoxDescent;
+
+    const n = renderLines.length;
+    const visBlockH = n <= 0 ? 0 : capH + (n - 1) * lineH + descH;
+    const maxLineW = Math.max(...renderLines.map((l) => ctx.measureText(l || " ").width));
 
     // ── Zone / segment boundary overflow (non-blocking — amber warning) ────────
     const widthOverflow  = !cfg.wordWrap && maxLineW > zw;
-    const heightOverflow = totalH > zh;
+    const heightOverflow = visBlockH > zh;
 
     // ── Plate boundary overflow (hard-blocks submission) ──────────────────────
     // Check whether the rendered text extends past the physical plate inner edge.
-    const hAlign = cfg.hAlign ?? "center";
-    let plateBoundaryOverflowW = false;
-    if (hAlign === "center") {
-      const cx = zx + zw / 2;
-      plateBoundaryOverflowW = (cx - maxLineW / 2) < 0 || (cx + maxLineW / 2) > innerW;
-    } else if (hAlign === "left") {
-      plateBoundaryOverflowW = (zx + maxLineW) > innerW;
-    } else {
-      // right-aligned: text ends at zx+zw, starts at zx+zw-maxLineW
-      plateBoundaryOverflowW = (zx + zw - maxLineW) < 0;
-    }
-    // Vertical: compute actual rendered text block top edge (mirrors computeTextLayout vAlign logic)
-    const vAlign = cfg.vAlign ?? "center";
-    let textTop: number;
-    if (vAlign === "top") {
+    let textTop: number, textBottom: number;
+    if (cfg.vAlign === "top") {
       textTop = zy;
-    } else if (vAlign === "bottom") {
-      textTop = zy + zh - totalH;
+      textBottom = zy + visBlockH;
+    } else if (cfg.vAlign === "bottom") {
+      textTop = zy + zh - visBlockH;
+      textBottom = zy + zh;
     } else {
-      textTop = zy + (zh - totalH) / 2; // center (default)
+      textTop = zy + (zh - visBlockH) / 2;
+      textBottom = textTop + visBlockH;
     }
-    const textBottom = textTop + totalH;
-    const plateBoundaryOverflowH = textTop < 0 || textBottom > innerH;
-    const plateBoundaryOverflow  = plateBoundaryOverflowW || plateBoundaryOverflowH;
+
+    let textLeft: number, textRight: number;
+    if (cfg.hAlign === "left") {
+      textLeft = zx;
+      textRight = zx + maxLineW;
+    } else if (cfg.hAlign === "right") {
+      textLeft = zx + zw - maxLineW;
+      textRight = zx + zw;
+    } else {
+      textLeft = zx + zw / 2 - maxLineW / 2;
+      textRight = zx + zw / 2 + maxLineW / 2;
+    }
+
+    const plateBoundaryOverflow =
+      textTop < 0 || textBottom > innerH ||
+      textLeft < 0 || textRight > innerW;
 
     result[zone.id] = {
-      widthOverflow, heightOverflow,
+      widthOverflow,
+      heightOverflow,
       overflows: widthOverflow || heightOverflow,
       plateBoundaryOverflow,
     };

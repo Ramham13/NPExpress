@@ -79,10 +79,9 @@ export default function Designer() {
     () => selectedSize ? computeOverflowMap(zones, lineConfigs, selectedSize) : {},
     [zones, lineConfigs, selectedSize],
   );
-  /** Any zone-level overflow — non-blocking, shown as amber warning. */
-  const hasSegmentOverflow = Object.values(overflowMap).some((v) => v.overflows);
-  /** Text outside the physical plate edge — hard-blocks add-to-cart / CSV import. */
+  const hasOverflow = Object.values(overflowMap).some((v) => v.overflows);
   const hasPlateBoundaryOverflow = Object.values(overflowMap).some((v) => v.plateBoundaryOverflow);
+  const hasSegmentOverflow = hasOverflow && !hasPlateBoundaryOverflow;
 
   const compatibleTemplates = selectedSize
     ? TEMPLATES.filter((t) => t.compatibleSizes.includes(selectedSize.id))
@@ -498,9 +497,9 @@ export default function Designer() {
             zones={zones} lineConfigs={lineConfigs}
             numSegments={numSegments} segments={segments}
             direction={direction} dividers={dividers}
-            overflowMap={overflowMap}
-            hasSegmentOverflow={hasSegmentOverflow}
+            overflowMap={overflowMap} hasOverflow={hasOverflow}
             hasPlateBoundaryOverflow={hasPlateBoundaryOverflow}
+            hasSegmentOverflow={hasSegmentOverflow}
             cartCount={cart.length}
             importError={importError}
             onChangeDirection={changeDirection}
@@ -774,23 +773,23 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
         const cfg         = lineConfigs[zone.id] ?? defaultZoneConfig();
         const isPlaceholder = !cfg.text;
         const font        = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
-        const ov                  = overflowMap[zone.id];
-        const segOverflow         = ov?.overflows ?? false;
-        const plateOverflow       = ov?.plateBoundaryOverflow ?? false;
+        const ov          = overflowMap[zone.id];
+        const overflows   = ov?.overflows ?? false;
+        const plateBoundary = ov?.plateBoundaryOverflow ?? false;
+        const segmentOnly = overflows && !plateBoundary;
 
         const layout = computeTextLayout(cfg, zone, zx, zy, zw, zh, size, isPlaceholder);
 
-        // Visual styling: red for plate-boundary error, amber for zone-only warning
-        const strokeColor = plateOverflow
+        const strokeColor = plateBoundary
           ? "hsl(0, 84%, 58%)"
-          : segOverflow
+          : segmentOnly
             ? "hsl(38, 92%, 50%)"
             : isPlaceholder
               ? "hsl(215, 22%, 32%)"
               : "hsl(215, 22%, 42%)";
-        const fillOverlay = plateOverflow
+        const fillOverlay = plateBoundary
           ? "rgba(239,68,68,0.10)"
-          : segOverflow
+          : segmentOnly
             ? "rgba(245,158,11,0.08)"
             : null;
 
@@ -799,13 +798,17 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
             {/* Zone background rect (editor only) */}
             <rect x={zx} y={zy} width={zw} height={zh}
               fill="hsl(215, 22%, 16%)"
-              stroke={strokeColor}
-              strokeWidth={(plateOverflow || segOverflow) ? VW * 0.004 : VW * 0.0012}
-              strokeDasharray={isPlaceholder && !segOverflow && !plateOverflow ? `${VW * 0.005},${VW * 0.003}` : "0"}
+              stroke={plateBoundary ? "hsl(0, 84%, 58%)" : segmentOnly ? "hsl(38, 92%, 55%)" : isPlaceholder ? "hsl(215, 22%, 32%)" : "hsl(215, 22%, 42%)"}
+              strokeWidth={overflows ? VW * 0.004 : VW * 0.0012}
+              strokeDasharray={isPlaceholder && !overflows ? `${VW * 0.005},${VW * 0.003}` : "0"}
               rx={VW * 0.004} />
-            {fillOverlay && (
+            {plateBoundary && (
               <rect x={zx} y={zy} width={zw} height={zh}
-                fill={fillOverlay} rx={VW * 0.004} style={{ pointerEvents: "none" }} />
+                fill="rgba(239,68,68,0.10)" rx={VW * 0.004} style={{ pointerEvents: "none" }} />
+            )}
+            {segmentOnly && (
+              <rect x={zx} y={zy} width={zw} height={zh}
+                fill="rgba(245,158,11,0.10)" rx={VW * 0.004} style={{ pointerEvents: "none" }} />
             )}
 
             {/* Text — clipped to zone */}
@@ -826,17 +829,23 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
               ))}
             </g>
 
-            {/* Overflow badge — amber for zone, red for plate edge */}
-            {(segOverflow || plateOverflow) && (
+            {/* Overflow badge */}
+            {plateBoundary && (
               <g style={{ pointerEvents: "none" }}>
-                <rect x={zx + zw - 120} y={zy + 5} width={115} height={19} rx={9.5}
-                  fill={plateOverflow ? "hsl(0, 84%, 52%)" : "hsl(38, 80%, 42%)"} />
-                <text x={zx + zw - 62} y={zy + 17.5} textAnchor="middle" fontSize={11}
+                <rect x={zx + zw - 138} y={zy + 5} width={133} height={19} rx={9.5} fill="hsl(0, 84%, 52%)" />
+                <text x={zx + zw - 71.5} y={zy + 17.5} textAnchor="middle" fontSize={11}
                   fill="white" fontFamily="system-ui, sans-serif" fontWeight={600}
                   dominantBaseline="alphabetic"
-                  style={{ userSelect: "none" }}>
-                  {plateOverflow ? "✕ Past plate edge" : "⚠ Segment overflow"}
-                </text>
+                  style={{ userSelect: "none" }}>⚠ Outside plate boundary</text>
+              </g>
+            )}
+            {segmentOnly && (
+              <g style={{ pointerEvents: "none" }}>
+                <rect x={zx + zw - 130} y={zy + 5} width={125} height={19} rx={9.5} fill="hsl(38, 92%, 50%)" />
+                <text x={zx + zw - 67.5} y={zy + 17.5} textAnchor="middle" fontSize={11}
+                  fill="white" fontFamily="system-ui, sans-serif" fontWeight={600}
+                  dominantBaseline="alphabetic"
+                  style={{ userSelect: "none" }}>⚠ Segment overflow</text>
               </g>
             )}
           </g>
@@ -932,7 +941,7 @@ function PlatePreview({ size, zones, lineConfigs, segments, direction, dividers,
 
 function CustomizePanel({
   zones, lineConfigs, numSegments, segments, direction, dividers, overflowMap,
-  hasSegmentOverflow, hasPlateBoundaryOverflow, cartCount, importError,
+  hasOverflow, hasPlateBoundaryOverflow, hasSegmentOverflow, cartCount, importError,
   onChangeDirection, onChangeNumSegments, onAdjustSegment, onUpdateZone, onUpdateDivider,
   onAddToCart, onBulkCsv, onViewCart, onExportLayout, onImportLayout,
 }: {
@@ -940,7 +949,7 @@ function CustomizePanel({
   numSegments: number; segments: number[];
   direction: Direction; dividers: DividerConfig[];
   overflowMap: Record<string, OverflowInfo>;
-  hasSegmentOverflow: boolean; hasPlateBoundaryOverflow: boolean; cartCount: number;
+  hasOverflow: boolean; hasPlateBoundaryOverflow: boolean; hasSegmentOverflow: boolean; cartCount: number;
   importError: string | null;
   onChangeDirection: (d: Direction) => void;
   onChangeNumSegments: (n: number) => void;
@@ -1047,9 +1056,7 @@ function CustomizePanel({
           data-testid="button-add-to-cart"
           onClick={onAddToCart}
           disabled={hasPlateBoundaryOverflow}
-          title={hasPlateBoundaryOverflow
-            ? "Text extends past the nameplate edge — reduce font size or shorten text"
-            : "Add this nameplate to your order"}
+          title={hasPlateBoundaryOverflow ? "Text extends outside the plate — fix before adding to cart" : "Add this nameplate to your order"}
           className={`w-full rounded py-2.5 text-sm font-bold transition-all ${
             hasPlateBoundaryOverflow
               ? "bg-muted text-muted-foreground cursor-not-allowed border border-border"
@@ -1067,17 +1074,14 @@ function CustomizePanel({
           Bulk Add from CSV
         </button>
 
-        {/* Segment overflow warning — non-blocking */}
-        {hasSegmentOverflow && !hasPlateBoundaryOverflow && (
-          <p className="text-center text-[10px] text-amber-500 leading-snug">
-            ⚠ Text overflows a segment boundary — it may overlap adjacent zones. Reduce font size, enable word wrap, or resize the zone.
-          </p>
-        )}
-
-        {/* Plate boundary error — hard block */}
         {hasPlateBoundaryOverflow && (
           <p className="text-center text-[10px] text-red-500 leading-snug">
-            ✕ Text extends past the nameplate edge. Reduce font size, shorten text, or enable word wrap.
+            Text extends outside the plate boundary. Shorten text, lower font size, or enable word wrap.
+          </p>
+        )}
+        {hasSegmentOverflow && !hasPlateBoundaryOverflow && (
+          <p className="text-center text-[10px] text-amber-500 leading-snug">
+            Text overflows its segment zone but stays within the plate — you can still add to cart.
           </p>
         )}
 
@@ -1154,26 +1158,20 @@ function ZoneEditor({ zone, idx, segmentPct, showSegmentControl, direction, cfg,
 }) {
   const font         = FONT_OPTIONS.find((f) => f.id === cfg.fontId) ?? FONT_OPTIONS[0];
   const letterHeight = approxLetterHeightIn(cfg.fontSize);
-  const ov              = overflowInfo;
-  const segOverflow     = ov?.overflows ?? false;
-  const plateOverflow   = ov?.plateBoundaryOverflow ?? false;
-  const overflows       = segOverflow || plateOverflow; // for border colour
+  const ov           = overflowInfo;
+  const overflows    = ov?.overflows ?? false;
+  const plateBoundary = ov?.plateBoundaryOverflow ?? false;
+  const segmentOnly  = overflows && !plateBoundary;
   const showTextarea = zone.multiline || cfg.wordWrap;
   const segCtrlTitle = direction === "horizontal"
     ? "Zone height in 5% steps — or drag dividers on the preview"
     : "Column width in 5% steps — or drag dividers on the preview";
 
   return (
-    <div className={`rounded border overflow-hidden ${
-      plateOverflow ? "border-red-500/60" : segOverflow ? "border-amber-500/60" : "border-border"
-    } bg-card`}>
-      <div className={`flex items-center justify-between border-b px-3 py-1.5 ${
-        plateOverflow ? "border-red-500/30 bg-red-500/5" : segOverflow ? "border-amber-500/30 bg-amber-500/5" : "border-border bg-muted/50"
-      }`}>
+    <div className={`rounded border overflow-hidden ${plateBoundary ? "border-red-500/60" : segmentOnly ? "border-amber-500/60" : "border-border"} bg-card`}>
+      <div className={`flex items-center justify-between border-b px-3 py-1.5 ${plateBoundary ? "border-red-500/30 bg-red-500/5" : segmentOnly ? "border-amber-500/30 bg-amber-500/5" : "border-border bg-muted/50"}`}>
         <div className="flex items-center gap-2">
-          <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black flex-shrink-0 ${
-            plateOverflow ? "bg-red-500/20 text-red-500" : segOverflow ? "bg-amber-500/20 text-amber-600" : "bg-primary/20 text-primary"
-          }`}>
+          <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black flex-shrink-0 ${plateBoundary ? "bg-red-500/20 text-red-500" : segmentOnly ? "bg-amber-500/20 text-amber-500" : "bg-primary/20 text-primary"}`}>
             {overflows ? <AlertTriangle size={8} /> : idx + 1}
           </span>
           <span className="text-xs font-semibold text-foreground">{zone.label}</span>
@@ -1201,42 +1199,31 @@ function ZoneEditor({ zone, idx, segmentPct, showSegmentControl, direction, cfg,
           <textarea data-testid={`input-zone-${zone.id}`} rows={2}
             value={cfg.text} onChange={(e) => onUpdate({ text: e.target.value })}
             placeholder={zone.placeholder}
-            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none resize-none bg-background ${
-              plateOverflow ? "border-red-500/60 focus:border-red-500"
-                : segOverflow ? "border-amber-500/60 focus:border-amber-500"
-                : "border-border focus:border-primary"
-            }`}
+            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none resize-none bg-background ${plateBoundary ? "border-red-500/60 focus:border-red-500" : segmentOnly ? "border-amber-500/60 focus:border-amber-500" : "border-border focus:border-primary"}`}
             style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }} />
         ) : (
           <input data-testid={`input-zone-${zone.id}`} type="text"
             value={cfg.text} onChange={(e) => onUpdate({ text: e.target.value })}
             placeholder={zone.placeholder}
-            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none bg-background ${
-              plateOverflow ? "border-red-500/60 focus:border-red-500"
-                : segOverflow ? "border-amber-500/60 focus:border-amber-500"
-                : "border-border focus:border-primary"
-            }`}
+            className={`w-full rounded border px-2.5 py-1.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none bg-background ${plateBoundary ? "border-red-500/60 focus:border-red-500" : segmentOnly ? "border-amber-500/60 focus:border-amber-500" : "border-border focus:border-primary"}`}
             style={{ fontFamily: font.family, fontWeight: cfg.bold ? 700 : 400, fontStyle: cfg.italic ? "italic" : "normal" }} />
         )}
 
-        {/* Plate boundary error (hard block) */}
-        {plateOverflow && (
+        {plateBoundary && (
           <div className="flex items-start gap-1.5 rounded bg-red-500/10 border border-red-500/30 px-2 py-1.5">
             <AlertTriangle size={11} className="text-red-500 flex-shrink-0 mt-0.5" />
             <p className="text-[10px] text-red-500 leading-snug">
-              Text extends past the nameplate edge. Reduce font size or shorten text.
+              Text exceeds the plate boundary — shorten it, lower font size, or enable word wrap.
             </p>
           </div>
         )}
-
-        {/* Segment overflow warning (non-blocking) */}
-        {segOverflow && !plateOverflow && (
+        {segmentOnly && (
           <div className="flex items-start gap-1.5 rounded bg-amber-500/10 border border-amber-500/30 px-2 py-1.5">
             <AlertTriangle size={11} className="text-amber-500 flex-shrink-0 mt-0.5" />
-            <p className="text-[10px] text-amber-600 leading-snug">
-              {ov?.widthOverflow && !ov?.heightOverflow && "Text overflows its segment width — may overlap adjacent zones."}
-              {ov?.heightOverflow && !ov?.widthOverflow && "Text overflows its segment height — may overlap adjacent zones."}
-              {ov?.widthOverflow && ov?.heightOverflow  && "Text overflows segment width and height — may overlap adjacent zones."}
+            <p className="text-[10px] text-amber-500 leading-snug">
+              {ov?.widthOverflow && !ov?.heightOverflow && "Text overflows this segment zone but fits on the plate."}
+              {ov?.heightOverflow && !ov?.widthOverflow && "Text is tall for this zone but fits on the plate."}
+              {ov?.widthOverflow && ov?.heightOverflow  && "Text overflows this zone in both dimensions but fits on the plate."}
             </p>
           </div>
         )}
