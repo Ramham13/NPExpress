@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { RotateCcw, Bold, Italic, AlignLeft, AlignCenter, AlignRight, WrapText, AlertTriangle, Rows3, Columns3 } from "lucide-react";
+import { RotateCcw, Bold, Italic, WrapText, AlertTriangle, Rows3, Columns3 } from "lucide-react";
 import {
   TAG_SIZES, TEMPLATES, FONT_OPTIONS, FONT_SIZE_OPTIONS,
   defaultZoneConfig, approxLetterHeightIn,
@@ -911,29 +911,28 @@ function ZoneEditor({ zone, idx, segmentPct, showSegmentControl, direction, cfg,
             onClick={() => onUpdate({ wordWrap: !cfg.wordWrap })}><WrapText size={11} /></ToggleBtn>
         </div>
 
-        <div className="flex items-center gap-1">
-          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground w-4">H</span>
-          {(["left", "center", "right"] as const).map((v) => {
-            const Icon = v === "left" ? AlignLeft : v === "center" ? AlignCenter : AlignRight;
-            return (
-              <ToggleBtn key={v} testId={`button-halign-${v}-${zone.id}`}
-                active={cfg.hAlign === v} title={v} onClick={() => onUpdate({ hAlign: v })}>
-                <Icon size={11} />
-              </ToggleBtn>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground w-4">V</span>
-          {(["top", "center", "bottom"] as const).map((v) => (
-            <ToggleBtn key={v} testId={`button-valign-${v}-${zone.id}`}
-              active={cfg.vAlign === v}
-              title={v === "top" ? "Top" : v === "center" ? "Middle" : "Bottom"}
-              onClick={() => onUpdate({ vAlign: v })} wide>
-              {v === "top" ? "Top" : v === "center" ? "Mid" : "Bot"}
-            </ToggleBtn>
-          ))}
+        {/* 3×3 alignment grid — each cell sets both hAlign and vAlign at once */}
+        <div>
+          <p className="mb-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Alignment</p>
+          <div className="grid grid-cols-3 gap-0.5 w-[82px]">
+            {(["top", "center", "bottom"] as const).map((v) =>
+              (["left", "center", "right"] as const).map((h) => {
+                const active = cfg.vAlign === v && cfg.hAlign === h;
+                const title  = `${v === "center" ? "Middle" : v.charAt(0).toUpperCase() + v.slice(1)} ${h.charAt(0).toUpperCase() + h.slice(1)}`;
+                return (
+                  <button key={`${v}-${h}`}
+                    data-testid={`button-align-${v}-${h}-${zone.id}`}
+                    title={title}
+                    onClick={() => onUpdate({ vAlign: v, hAlign: h })}
+                    className={`flex h-[26px] w-[26px] items-center justify-center rounded border transition-all ${
+                      active ? "border-primary bg-primary" : "border-border bg-background hover:border-primary"
+                    }`}>
+                    <AlignDot vAlign={v} hAlign={h} active={active} />
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -975,5 +974,22 @@ function ToggleBtn({ testId, active, title, onClick, children, wide }: {
       className={`flex items-center justify-center rounded border text-[10px] font-bold transition-all h-[26px] ${wide ? "px-1.5 min-w-[28px]" : "w-[26px]"} ${active ? "border-primary bg-primary text-white" : "border-border bg-background text-foreground hover:border-primary"}`}>
       {children}
     </button>
+  );
+}
+
+/** Small SVG dot that visually indicates the alignment position within a 3×3 grid cell. */
+function AlignDot({ vAlign, hAlign, active }: {
+  vAlign: "top" | "center" | "bottom";
+  hAlign: "left" | "center" | "right";
+  active: boolean;
+}) {
+  const cx = hAlign === "left" ? 4 : hAlign === "center" ? 8 : 12;
+  const cy = vAlign === "top"  ? 4 : vAlign === "center" ? 8 : 12;
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16">
+      <circle cx={cx} cy={cy} r={2.2}
+        fill={active ? "rgba(255,255,255,0.9)" : "currentColor"}
+        className={active ? "" : "text-muted-foreground"} />
+    </svg>
   );
 }
