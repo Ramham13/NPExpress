@@ -16,19 +16,42 @@ import {
 import PlateFinalPreview from "@/components/PlateFinalPreview";
 import CsvView from "@/pages/CsvView";
 import CartView from "@/pages/CartView";
+import CheckoutGuest, { blankGuestInfo, type GuestInfo } from "@/pages/CheckoutGuest";
+import CheckoutReview from "@/pages/CheckoutReview";
+import CheckoutDone from "@/pages/CheckoutDone";
+import QuoteDone from "@/pages/QuoteDone";
 
 // Inner padding used only in the editor preview (decorative divider line inset)
 const IPAD_RATIO = 0.008;
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-type AppView = "design" | "csv" | "cart";
+type AppView =
+  | "design" | "csv" | "cart"
+  | "checkout" | "checkout-review" | "order-confirmed"
+  | "quote"   | "quote-confirmed";
 
 export default function Designer() {
   // ── Top-level: cart + app view ───────────────────────────────────────────
   const [cart, setCart]           = useState<CartItem[]>([]);
   const [appView, setAppView]     = useState<AppView>("design");
   const [selectedSize, setSelectedSize] = useState<TagSize | null>(null);
+
+  // ── Checkout state ───────────────────────────────────────────────────────
+  const [guestInfo,      setGuestInfo]      = useState<GuestInfo>(blankGuestInfo());
+  const [orderNumber,    setOrderNumber]    = useState<string>("");
+  const [confirmedCart,  setConfirmedCart]  = useState<CartItem[]>([]);
+
+  function makeOrderNumber() {
+    const year = new Date().getFullYear();
+    const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
+    return `NX-${year}-${rand}`;
+  }
+
+  function startCheckout() { setAppView("checkout"); }
+  function startQuote()    { setAppView("quote");    }
+  function goToCart()      { setAppView("cart");     }
+  function goToDesign()    { setSelectedSize(null); setAppView("design"); }
 
   // ── Design state ────────────────────────────────────────────────────────
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
@@ -229,6 +252,70 @@ export default function Designer() {
         onBack={() => setAppView("design")}
         onRemove={removeFromCart}
         onClearAll={() => setCart([])}
+        onCheckout={startCheckout}
+        onQuote={startQuote}
+      />
+    );
+  }
+
+  if (appView === "checkout") {
+    return (
+      <CheckoutGuest
+        cart={cart}
+        mode="paypal"
+        initialInfo={guestInfo}
+        onBack={goToCart}
+        onSubmit={(info) => { setGuestInfo(info); setAppView("checkout-review"); }}
+      />
+    );
+  }
+
+  if (appView === "checkout-review") {
+    return (
+      <CheckoutReview
+        cart={cart}
+        guestInfo={guestInfo}
+        onBack={() => setAppView("checkout")}
+        onPaid={() => {
+          const num = makeOrderNumber();
+          setOrderNumber(num);
+          setConfirmedCart([...cart]); // snapshot before clearing
+          setCart([]);
+          setAppView("order-confirmed");
+        }}
+      />
+    );
+  }
+
+  if (appView === "order-confirmed") {
+    return (
+      <CheckoutDone
+        orderNumber={orderNumber}
+        guestInfo={guestInfo}
+        cart={confirmedCart}
+        onNewOrder={() => { setGuestInfo(blankGuestInfo()); setConfirmedCart([]); goToDesign(); }}
+      />
+    );
+  }
+
+  if (appView === "quote") {
+    return (
+      <CheckoutGuest
+        cart={cart}
+        mode="quote"
+        initialInfo={guestInfo}
+        onBack={goToCart}
+        onSubmit={(info) => { setGuestInfo(info); setAppView("quote-confirmed"); }}
+      />
+    );
+  }
+
+  if (appView === "quote-confirmed") {
+    return (
+      <QuoteDone
+        guestInfo={guestInfo}
+        cart={cart}
+        onNewOrder={() => { setGuestInfo(blankGuestInfo()); setCart([]); goToDesign(); }}
       />
     );
   }

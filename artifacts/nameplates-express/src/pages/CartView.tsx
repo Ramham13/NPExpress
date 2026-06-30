@@ -14,6 +14,8 @@ interface Props {
   onBack: () => void;
   onRemove: (id: string) => void;
   onClearAll: () => void;
+  onCheckout: () => void;
+  onQuote: () => void;
 }
 
 function textSummary(item: CartItem): string {
@@ -26,7 +28,7 @@ function textSummary(item: CartItem): string {
     .join(" · ") || "(no text)";
 }
 
-export default function CartView({ cart, onBack, onRemove, onClearAll }: Props) {
+export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckout, onQuote }: Props) {
   // Group items by batchId for display
   const batches: Map<string, CartItem[]> = new Map();
   const singles: CartItem[] = [];
@@ -123,25 +125,37 @@ export default function CartView({ cart, onBack, onRemove, onClearAll }: Props) 
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer — two checkout paths */}
       {cart.length > 0 && (
-        <div className="sticky bottom-0 border-t border-slate-800 bg-[hsl(220_20%_9%)] px-6 py-4 flex items-center gap-4">
-          <span className="text-sm text-slate-400">
-            <span className="font-semibold text-slate-200">{cart.length}</span> nameplate{cart.length !== 1 ? "s" : ""} ready to order
-          </span>
-          <div className="flex-1" />
-          <button
-            onClick={onBack}
-            className="px-4 py-2 rounded text-sm text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-          >
-            Add More
-          </button>
-          <button
-            className="px-5 py-2 rounded bg-blue-600 hover:bg-blue-500 text-sm font-semibold transition-colors"
-            title="Checkout is not yet implemented"
-          >
-            Place Order →
-          </button>
+        <div className="sticky bottom-0 border-t border-slate-800 bg-[hsl(220_20%_9%)] px-6 py-4">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-sm text-slate-400">
+              <span className="font-semibold text-slate-200">{cart.length}</span>{" "}
+              nameplate{cart.length !== 1 ? "s" : ""} ready to order
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={onBack}
+              className="px-4 py-2 rounded text-sm text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            >
+              Add More
+            </button>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              onClick={onCheckout}
+              className="flex-1 rounded py-3 text-sm font-bold text-[#003087] transition-all hover:opacity-90 active:scale-[0.98]"
+              style={{ backgroundColor: "#FFC439" }}
+            >
+              Checkout with PayPal
+            </button>
+            <button
+              onClick={onQuote}
+              className="flex-1 rounded border border-slate-600 bg-slate-800 hover:border-slate-500 py-3 text-sm font-semibold text-slate-200 transition-all"
+            >
+              Submit Quote / Request Invoice
+            </button>
+          </div>
         </div>
       )}
     </div>
