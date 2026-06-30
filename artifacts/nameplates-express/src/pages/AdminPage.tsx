@@ -10,8 +10,8 @@ import {
   DEFAULT_COLOR_PALETTE, ADMIN_DEFAULT_SIZES,
 } from "@/lib/admin-store";
 import {
-  Plus, Pencil, Trash2, RotateCcw, Save, X, ChevronUp, ChevronDown,
-  ShieldAlert, Info, Check, AlertTriangle, Lock, LogOut,
+  Plus, Pencil, Trash2, Save, X, ChevronUp, ChevronDown,
+  Lock, LogOut,
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -257,13 +257,12 @@ export default function AdminPage() {
 }
 
 function AdminPageInner() {
-  const { sizes, activeSizes, addSize, updateSize, deleteSize, resetToDefaults } = useAdmin();
+  const { sizes, activeSizes, addSize, updateSize, deleteSize } = useAdmin();
   const [view, setView]           = useState<AdminView>("list");
   const [editId, setEditId]       = useState<string | null>(null);
   const [form, setForm]           = useState<SizeForm | null>(null);
   const [errors, setErrors]       = useState<Partial<Record<string, string>>>({});
   const [deleteId, setDeleteId]   = useState<string | null>(null);
-  const [resetConfirm, setResetConfirm] = useState(false);
   const [savedFlash, setSavedFlash]     = useState(false);
 
   const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -600,15 +599,6 @@ function AdminPageInner() {
       <AdminHeader />
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
 
-        {/* Auth warning */}
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-          <ShieldAlert size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-800">
-            <strong>Development note:</strong> This admin page is accessible without authentication.
-            Add a login gate before going to production.
-          </p>
-        </div>
-
         {savedFlash && (
           <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             <Check size={15} className="flex-shrink-0" />
@@ -626,21 +616,6 @@ function AdminPageInner() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {resetConfirm ? (
-              <div className="flex items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2">
-                <AlertTriangle size={13} className="text-red-500" />
-                <span className="text-xs text-red-700">Reset all sizes to defaults?</span>
-                <button onClick={() => { resetToDefaults(); setResetConfirm(false); setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2500); }}
-                  className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors">Yes, reset</button>
-                <button onClick={() => setResetConfirm(false)}
-                  className="text-xs text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-              </div>
-            ) : (
-              <button onClick={() => setResetConfirm(true)}
-                className="flex items-center gap-1.5 rounded border border-slate-200 bg-white hover:border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 transition-all">
-                <RotateCcw size={12} /> Reset to Defaults
-              </button>
-            )}
             <button onClick={openAdd}
               className="flex items-center gap-1.5 rounded bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm font-bold text-white transition-colors">
               <Plus size={14} /> Add New Size

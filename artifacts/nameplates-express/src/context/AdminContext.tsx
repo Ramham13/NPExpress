@@ -17,12 +17,7 @@ import {
   getGetAdminConfigQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  type AdminSize,
-  ADMIN_DEFAULT_SIZES,
-  loadAdminSizes,
-  saveAdminSizes,
-} from "@/lib/admin-store";
+import { type AdminSize, loadAdminSizes, saveAdminSizes } from "@/lib/admin-store";
 
 // ─── Session key (written by AdminPage on successful unlock) ──────────────────
 
@@ -55,7 +50,6 @@ interface AdminContextValue {
   addSize: (data: Omit<AdminSize, "id">) => void;
   updateSize: (id: string, patch: Partial<AdminSize>) => void;
   deleteSize: (id: string) => void;
-  resetToDefaults: () => void;
 }
 
 const AdminContext = createContext<AdminContextValue | null>(null);
@@ -128,10 +122,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     setSizes((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  const resetToDefaults = useCallback(() => {
-    setSizes(ADMIN_DEFAULT_SIZES);
-  }, []);
-
   const activeSizes = [...sizes]
     .filter((s) => s.active)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -145,7 +135,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         addSize,
         updateSize,
         deleteSize,
-        resetToDefaults,
       }}
     >
       {children}

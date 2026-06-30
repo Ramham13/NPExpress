@@ -25,9 +25,27 @@ A browser-based ordering platform for **custom anodized aluminum nameplates**. C
 
 ## Overview
 
-Nameplates Express is a **fully client-side** React + Vite web application — there is no backend server and no database. All state lives in the browser (React state + `localStorage` for admin settings). Orders are submitted either through the PayPal JavaScript SDK (sandbox mode) or as a "quote request" (currently a UI mock that produces a confirmation screen).
+Nameplates Express is a **React + Vite ordering app** with a local Express API and PostgreSQL-backed admin config store for testing and development. Customer state still lives in the browser, but the admin dashboard now persists sizes and colors through the API so it behaves like a real shared environment. Orders are submitted either through the PayPal JavaScript SDK (sandbox mode) or as a "quote request" flow that produces a confirmation screen.
 
 The application is structured as a pnpm workspace artifact at `artifacts/nameplates-express/`.
+
+---
+
+## Local Docker
+
+This repo includes a local Docker stack for testing.
+
+```bash
+docker compose up -d --build
+```
+
+That starts:
+
+- the web app at `http://127.0.0.1:8090`
+- the API at `http://127.0.0.1:8090/api`
+- a local PostgreSQL container for admin config persistence
+
+The admin password for the local stack is stored in `docker/.env.local` and is currently set to `local-dev-password`.
 
 ---
 
