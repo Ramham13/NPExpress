@@ -9,10 +9,11 @@ import type { CartItem } from "@/lib/plate-utils";
 interface Props {
   guestInfo: GuestInfo;
   cart: CartItem[];
+  handoffState: "idle" | "sending" | "sent" | "failed";
   onNewOrder: () => void;
 }
 
-export default function QuoteDone({ guestInfo, cart, onNewOrder }: Props) {
+export default function QuoteDone({ guestInfo, cart, handoffState, onNewOrder }: Props) {
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
       <div className="flex-1 overflow-y-auto">
@@ -30,6 +31,9 @@ export default function QuoteDone({ guestInfo, cart, onNewOrder }: Props) {
               <strong className="text-slate-200">{cart.length} nameplate{cart.length !== 1 ? "s" : ""}</strong>{" "}
               and will follow up at{" "}
               <strong className="text-slate-200">{guestInfo.email}</strong> within 1 business day.
+            </p>
+            <p className="mt-3 text-xs text-slate-500">
+              {handoffState === "sent" ? "The invoice handoff has been sent to operations." : "Final handoff is processing."}
             </p>
           </div>
 

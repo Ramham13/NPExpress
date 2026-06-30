@@ -9,4 +9,5 @@ import type { AdminSize } from './adminSize';
 
 export interface AdminConfigInput {
   sizes: AdminSize[];
+  workflowSettings: Record<string, any>;
 }

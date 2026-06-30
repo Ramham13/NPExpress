@@ -47,6 +47,10 @@ That starts:
 
 The admin password for the local stack is stored in `docker/.env.local` and is currently set to `local-dev-password`.
 
+The admin page now also stores sandbox workflow settings in the database-backed admin config record. The local defaults are intentionally empty for the n8n URL and callback secret so you can supply your own sandbox values in the admin UI.
+
+The app now treats n8n as the downstream orchestration layer for order-intake email and invoice/receipt handling. The website still persists the canonical order first, then sends the finalized payload to n8n and waits for the confirmation callback.
+
 ---
 
 ## Features
@@ -78,8 +82,77 @@ The admin password for the local stack is stored in `docker/.env.local` and is c
 | **Pricing Tiers** | Base price per unit + configurable quantity-break discounts |
 | **Color Palette** | Enable/disable standard colors; add custom colors with hex codes |
 | **Sort Order & Active Status** | Control which sizes appear in the size picker and in what order |
+| **Sandbox Workflow Settings** | Configure n8n webhook settings and sandbox PayPal placeholders |
+| **Recent Orders** | Inspect the latest persisted orders and their current state |
 
 ---
+
+## Order Orchestration
+
+The local checkout workflow now persists the canonical order first and then hands it off to n8n.
+
+### Lifecycle
+
+The order state model supports these states:
+
+- `draft`
+- `checkout_started`
+- `payment_pending`
+- `invoice_pending`
+- `n8n_pending`
+- `n8n_acknowledged`
+- `approved`
+- `submitted`
+- `paid`
+- `ready`
+- `shipped`
+- `delivered`
+- `cancelled`
+- `error`
+
+### Routes
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/orders/finalize` | Persist the canonical order and send it to n8n |
+| `GET` | `/api/orders` | List recent persisted orders |
+| `GET` | `/api/orders/:orderId` | Fetch one order and its delivery audit log |
+| `POST` | `/api/orders/:orderId/status` | Apply a downstream status update |
+| `POST` | `/api/webhooks/n8n/order-confirmed` | Accept the n8n acknowledgement callback |
+
+### Payload shape
+
+The outbound payload is JSON and includes:
+
+- `orderId`
+- `orderState`
+- `paymentMethod`
+- `customer`
+- `cart`
+- `proofReferences`
+- `payment`
+- `createdAt`
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_PASSWORD` | Admin unlock password for the local stack |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `N8N_ORDERS_WEBHOOK_URL` | Outbound webhook target for finalized orders |
+| `N8N_CALLBACK_SECRET` | Shared token for the n8n acknowledgement callback |
+| `N8N_SHARED_SECRET` | Shared HMAC secret for correlating order/webhook requests |
+
+### Manual test checklist
+
+1. Open `http://127.0.0.1:8090`.
+2. Build a plate design and add it to the cart.
+3. Fill in checkout details and choose PayPal sandbox or invoice/manual payment.
+4. Confirm the order appears in `GET /api/orders`.
+5. Use the admin page to set your sandbox n8n webhook settings.
+6. Send a simulated callback to `POST /api/webhooks/n8n/order-confirmed`.
+7. Update the order with `POST /api/orders/:orderId/status`.
+8. Verify the admin page shows the saved workflow settings and recent orders.
 
 ## Tech Stack
 

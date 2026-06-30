@@ -47,6 +47,7 @@ export default function Designer() {
   const [guestInfo,      setGuestInfo]      = useState<GuestInfo>(blankGuestInfo());
   const [orderNumber,    setOrderNumber]    = useState<string>("");
   const [confirmedCart,  setConfirmedCart]  = useState<CartItem[]>([]);
+  const [handoffState,   setHandoffState]   = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
   function makeOrderNumber() {
     const year = new Date().getFullYear();
@@ -58,6 +59,23 @@ export default function Designer() {
   function startQuote()    { setAppView("quote");    }
   function goToCart()      { setAppView("cart");     }
   function goToDesign()    { setSelectedSize(null); setAppView("design"); }
+
+  async function finalizeOrder(paymentMethod: "paypal" | "invoice", paymentStatus: "paid" | "pending", cartSnapshot: CartItem[], infoSnapshot: GuestInfo) {
+    const orderId = makeOrderNumber();
+    const response = await fetch("/api/orders/finalize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        orderId,
+        paymentMethod,
+        paymentStatus,
+        customer: infoSnapshot,
+        cart: cartSnapshot,
+      }),
+    });
+    if (!response.ok) throw new Error(`Order finalize failed: ${response.status}`);
+    return orderId;
+  }
 
   // ── Design state ────────────────────────────────────────────────────────
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
@@ -295,11 +313,18 @@ export default function Designer() {
         guestInfo={guestInfo}
         onBack={() => setAppView("checkout")}
         onPaid={() => {
-          const num = makeOrderNumber();
-          setOrderNumber(num);
-          setConfirmedCart([...cart]); // snapshot before clearing
-          setCart([]);
-          setAppView("order-confirmed");
+          const snapshot = [...cart];
+          const infoSnapshot = { ...guestInfo };
+          setHandoffState("sending");
+          void finalizeOrder("paypal", "paid", snapshot, infoSnapshot)
+            .then((num) => {
+              setOrderNumber(num);
+              setConfirmedCart(snapshot);
+              setCart([]);
+              setHandoffState("sent");
+              setAppView("order-confirmed");
+            })
+            .catch(() => setHandoffState("failed"));
         }}
       />
     );
@@ -311,6 +336,7 @@ export default function Designer() {
         orderNumber={orderNumber}
         guestInfo={guestInfo}
         cart={confirmedCart}
+        handoffState={handoffState}
         onNewOrder={() => { setGuestInfo(blankGuestInfo()); setConfirmedCart([]); goToDesign(); }}
       />
     );
@@ -323,7 +349,21 @@ export default function Designer() {
         mode="quote"
         initialInfo={guestInfo}
         onBack={goToCart}
-        onSubmit={(info) => { setGuestInfo(info); setAppView("quote-confirmed"); }}
+        onSubmit={(info) => {
+          const snapshot = [...cart];
+          const infoSnapshot = { ...info };
+          setGuestInfo(infoSnapshot);
+          setHandoffState("sending");
+          void finalizeOrder("invoice", "pending", snapshot, infoSnapshot)
+            .then((num) => {
+              setOrderNumber(num);
+              setConfirmedCart(snapshot);
+              setCart([]);
+              setHandoffState("sent");
+              setAppView("quote-confirmed");
+            })
+            .catch(() => setHandoffState("failed"));
+        }}
       />
     );
   }
@@ -333,6 +373,7 @@ export default function Designer() {
       <QuoteDone
         guestInfo={guestInfo}
         cart={cart}
+        handoffState={handoffState}
         onNewOrder={() => { setGuestInfo(blankGuestInfo()); setCart([]); goToDesign(); }}
       />
     );

@@ -17,6 +17,7 @@ router.get("/admin/config", async (req, res) => {
     const data = GetAdminConfigResponse.parse({
       configured: row != null,
       sizes: row?.sizes ?? [],
+      workflowSettings: row?.workflowSettings ?? {},
     });
     res.json(data);
   } catch (err) {
@@ -47,19 +48,19 @@ router.put("/admin/config", async (req, res) => {
     if (existing) {
       const result = await db
         .update(adminConfigTable)
-        .set({ sizes: body.sizes })
+        .set({ sizes: body.sizes, workflowSettings: body.workflowSettings ?? {} })
         .where(eq(adminConfigTable.id, existing.id))
         .returning();
       updated = result[0];
     } else {
       const result = await db
         .insert(adminConfigTable)
-        .values({ sizes: body.sizes })
+        .values({ sizes: body.sizes, workflowSettings: body.workflowSettings ?? {} })
         .returning();
       updated = result[0];
     }
 
-    const data = PutAdminConfigResponse.parse({ configured: true, sizes: updated.sizes });
+    const data = PutAdminConfigResponse.parse({ configured: true, sizes: updated.sizes, workflowSettings: updated.workflowSettings ?? {} });
     res.json(data);
   } catch (err) {
     req.log.error(err, "Failed to save admin config");

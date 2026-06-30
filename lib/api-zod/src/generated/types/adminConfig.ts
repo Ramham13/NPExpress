@@ -11,4 +11,5 @@ export interface AdminConfig {
   /** True when a config row exists in the database; false on first run */
   configured: boolean;
   sizes: AdminSize[];
+  workflowSettings: Record<string, any>;
 }

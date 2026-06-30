@@ -54,7 +54,8 @@ export const GetAdminConfigResponse = zod.object({
   "label": zod.string(),
   "hex": zod.string(),
   "enabled": zod.boolean()
-}))
+})),
+  "workflowSettings": zod.record(zod.string(), zod.any()).default({})
 }))
 })
 
@@ -82,7 +83,8 @@ export const PutAdminConfigBody = zod.object({
   "label": zod.string(),
   "hex": zod.string(),
   "enabled": zod.boolean()
-}))
+})),
+  "workflowSettings": zod.record(zod.string(), zod.any()).default({})
 }))
 })
 
@@ -106,7 +108,8 @@ export const PutAdminConfigResponse = zod.object({
   "label": zod.string(),
   "hex": zod.string(),
   "enabled": zod.boolean()
-}))
+})),
+  "workflowSettings": zod.record(zod.string(), zod.any()).default({})
 }))
 })
 

@@ -11,10 +11,11 @@ interface Props {
   orderNumber: string;
   guestInfo: GuestInfo;
   cart: CartItem[];
+  handoffState: "idle" | "sending" | "sent" | "failed";
   onNewOrder: () => void;
 }
 
-export default function CheckoutDone({ orderNumber, guestInfo, cart, onNewOrder }: Props) {
+export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffState, onNewOrder }: Props) {
   const shipTo = [guestInfo.city, guestInfo.state].filter(Boolean).join(", ");
 
   return (
@@ -33,6 +34,9 @@ export default function CheckoutDone({ orderNumber, guestInfo, cart, onNewOrder 
               A Nameplates Express team member will review your order and contact you at{" "}
               <strong className="text-slate-200">{guestInfo.email}</strong> to confirm pricing and
               send a PayPal payment request.
+            </p>
+            <p className="mt-3 text-xs text-slate-500">
+              {handoffState === "sent" ? "The order has been handed off to fulfillment." : "Final handoff is processing."}
             </p>
           </div>
 

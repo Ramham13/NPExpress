@@ -31,9 +31,9 @@ function adminRequestOptions(): RequestInit {
   return key ? { headers: { "x-admin-key": key } } : {};
 }
 
-/** Persist sizes to the API. Logs errors so they appear in the console. */
-function persistSizes(sizes: AdminSize[]): void {
-  void putAdminConfig({ sizes }, adminRequestOptions()).catch((err: unknown) => {
+/** Persist sizes and workflow settings to the API. Logs errors so they appear in the console. */
+function persistConfig(sizes: AdminSize[], workflowSettings: Record<string, unknown>): void {
+  void putAdminConfig({ sizes, workflowSettings }, adminRequestOptions()).catch((err: unknown) => {
     console.error("[AdminContext] Failed to persist config to server:", err);
   });
 }
@@ -45,11 +45,13 @@ interface AdminContextValue {
   sizes: AdminSize[];
   /** Active sizes only, sorted by sortOrder. */
   activeSizes: AdminSize[];
+  workflowSettings: Record<string, unknown>;
   /** True while the initial config is being fetched from the server. */
   isLoading: boolean;
   addSize: (data: Omit<AdminSize, "id">) => void;
   updateSize: (id: string, patch: Partial<AdminSize>) => void;
   deleteSize: (id: string) => void;
+  updateWorkflowSettings: (patch: Record<string, unknown>) => void;
 }
 
 const AdminContext = createContext<AdminContextValue | null>(null);
@@ -59,6 +61,7 @@ const AdminContext = createContext<AdminContextValue | null>(null);
 export function AdminProvider({ children }: { children: React.ReactNode }) {
   // Seed from localStorage for instant paint while the API response is in-flight
   const [sizes, setSizes] = useState<AdminSize[]>(loadAdminSizes);
+  const [workflowSettings, setWorkflowSettings] = useState<Record<string, unknown>>({});
 
   // Guards so effects only fire at the right time
   const initializedFromApi = useRef(false);
@@ -84,6 +87,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       const serverSizes = apiConfig.sizes as AdminSize[];
       skipNextSave.current = true;
       setSizes(serverSizes);
+      setWorkflowSettings((apiConfig as { workflowSettings?: Record<string, unknown> }).workflowSettings ?? {});
       saveAdminSizes(serverSizes);
     }
     // If !configured (no DB row yet), leave local default sizes in place.
@@ -106,8 +110,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     saveAdminSizes(sizes);
-    persistSizes(sizes);
+    persistConfig(sizes, workflowSettings);
   }, [sizes]);
+
+  useEffect(() => {
+    if (isFirstRender.current) return;
+    if (!initializedFromApi.current) return;
+    if (skipNextSave.current) return;
+    persistConfig(sizes, workflowSettings);
+  }, [workflowSettings]);
 
   const addSize = useCallback((data: Omit<AdminSize, "id">) => {
     const id = `custom-${Date.now()}`;
@@ -122,6 +133,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     setSizes((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  const updateWorkflowSettings = useCallback((patch: Record<string, unknown>) => {
+    setWorkflowSettings((prev) => ({ ...prev, ...patch }));
+  }, []);
+
   const activeSizes = [...sizes]
     .filter((s) => s.active)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -131,10 +146,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       value={{
         sizes,
         activeSizes,
+        workflowSettings,
         isLoading: isLoading && !initializedFromApi.current,
         addSize,
         updateSize,
         deleteSize,
+        updateWorkflowSettings,
       }}
     >
       {children}

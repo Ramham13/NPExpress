@@ -2,7 +2,7 @@
  * Admin Dashboard — only reachable via direct URL (/admin).
  * Not linked from any customer-facing navigation.
  */
-import { useState, useCallback, createContext, useContext } from "react";
+import { useState, useCallback, useEffect, createContext, useContext } from "react";
 import { postAdminUnlock } from "@workspace/api-client-react";
 import { useAdmin, ADMIN_KEY_SESSION_STORAGE } from "@/context/AdminContext";
 import {
@@ -11,7 +11,7 @@ import {
 } from "@/lib/admin-store";
 import {
   Plus, Pencil, Trash2, Save, X, ChevronUp, ChevronDown,
-  Lock, LogOut,
+  ShieldAlert, Info, Check, AlertTriangle, Lock, LogOut,
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -257,13 +257,20 @@ export default function AdminPage() {
 }
 
 function AdminPageInner() {
-  const { sizes, activeSizes, addSize, updateSize, deleteSize } = useAdmin();
+  const { sizes, activeSizes, addSize, updateSize, deleteSize, workflowSettings, updateWorkflowSettings } = useAdmin();
   const [view, setView]           = useState<AdminView>("list");
   const [editId, setEditId]       = useState<string | null>(null);
   const [form, setForm]           = useState<SizeForm | null>(null);
   const [errors, setErrors]       = useState<Partial<Record<string, string>>>({});
   const [deleteId, setDeleteId]   = useState<string | null>(null);
   const [savedFlash, setSavedFlash]     = useState(false);
+  const [workflowForm, setWorkflowForm] = useState({
+    n8nOrdersWebhookUrl: String(workflowSettings.n8nOrdersWebhookUrl ?? ""),
+    n8nCallbackSecret: String(workflowSettings.n8nCallbackSecret ?? ""),
+    webhookEnabled: Boolean(workflowSettings.webhookEnabled ?? false),
+    sandboxPayPalClientId: String(workflowSettings.sandboxPayPalClientId ?? ""),
+    sandboxPayPalSecret: String(workflowSettings.sandboxPayPalSecret ?? ""),
+  });
 
   const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -305,6 +312,12 @@ function AdminPageInner() {
     setForm(null);
     setEditId(null);
     setErrors({});
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2500);
+  }
+
+  function saveWorkflowSettings() {
+    updateWorkflowSettings(workflowForm as unknown as Record<string, unknown>);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 2500);
   }
@@ -599,6 +612,38 @@ function AdminPageInner() {
       <AdminHeader />
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
 
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <div>
+              <h2 className="text-lg font-black text-slate-800">Sandbox Workflow Settings</h2>
+              <p className="text-sm text-slate-500 mt-1">Stored locally in the admin config record.</p>
+            </div>
+            <div className="space-y-3">
+              <Field label="n8n Orders Webhook URL">
+                <input className={INP} value={workflowForm.n8nOrdersWebhookUrl} onChange={e => setWorkflowForm(p => ({ ...p, n8nOrdersWebhookUrl: e.target.value }))} />
+              </Field>
+              <Field label="n8n Callback Secret">
+                <input className={INP} value={workflowForm.n8nCallbackSecret} onChange={e => setWorkflowForm(p => ({ ...p, n8nCallbackSecret: e.target.value }))} />
+              </Field>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={workflowForm.webhookEnabled} onChange={e => setWorkflowForm(p => ({ ...p, webhookEnabled: e.target.checked }))} />
+                Enable outbound webhook delivery
+              </label>
+              <Field label="Sandbox PayPal Client ID">
+                <input className={INP} value={workflowForm.sandboxPayPalClientId} onChange={e => setWorkflowForm(p => ({ ...p, sandboxPayPalClientId: e.target.value }))} />
+              </Field>
+              <Field label="Sandbox PayPal Secret">
+                <input className={INP} value={workflowForm.sandboxPayPalSecret} onChange={e => setWorkflowForm(p => ({ ...p, sandboxPayPalSecret: e.target.value }))} />
+              </Field>
+              <button type="button" onClick={saveWorkflowSettings} className="rounded bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm font-bold text-white">
+                Save Workflow Settings
+              </button>
+            </div>
+          </div>
+
+          <RecentOrdersPanel />
+        </div>
+
         {savedFlash && (
           <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             <Check size={15} className="flex-shrink-0" />
@@ -670,6 +715,44 @@ function AdminPageInner() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function RecentOrdersPanel() {
+  const [orders, setOrders] = useState<Array<Record<string, unknown>>>([]);
+  const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    void fetch("/api/orders").then(r => r.json()).then(data => setOrders(data.orders ?? [])).catch(() => setOrders([]));
+  }, []);
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+      <h2 className="text-lg font-black text-slate-800">Recent Orders</h2>
+      <div className="mt-3 space-y-2 max-h-80 overflow-auto">
+        {orders.length === 0 ? <p className="text-sm text-slate-500">No orders yet.</p> : orders.map((o) => (
+          <button key={String(o.orderId ?? o.id)} type="button" onClick={() => setSelected(o)} className="w-full text-left rounded border border-slate-200 p-3 text-sm hover:border-blue-300">
+            <div className="font-semibold text-slate-800">{String(o.orderId ?? o.id)}</div>
+            <div className="text-slate-500">State: {String(o.state ?? "unknown")}</div>
+          </button>
+        ))}
+      </div>
+      {selected && (
+        <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm space-y-2">
+          <div className="font-semibold text-slate-800">Selected order: {String(selected.orderId ?? selected.id)}</div>
+          <div className="text-slate-500">State: {String(selected.state ?? "unknown")}</div>
+          <div className="flex gap-2">
+            <button type="button" onClick={async () => {
+              const orderId = String(selected.orderId ?? selected.id);
+              await fetch(`/api/orders/${orderId}/retry`, { method: "POST" });
+            }} className="rounded bg-blue-600 px-3 py-1.5 text-white text-xs font-semibold">
+              Retry n8n
+            </button>
+            <button type="button" onClick={() => setSelected(null)} className="rounded border border-slate-300 px-3 py-1.5 text-slate-700 text-xs font-semibold">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -798,7 +881,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       </div>
       <div>
         <p className="text-slate-700 font-semibold mb-1">No sizes configured</p>
-        <p className="text-sm text-slate-400">Add your first nameplate size to get started, or reset to defaults.</p>
+        <p className="text-sm text-slate-400">Add your first nameplate size to get started.</p>
       </div>
       <button onClick={onAdd}
         className="flex items-center gap-1.5 rounded bg-blue-600 hover:bg-blue-500 px-5 py-2.5 text-sm font-bold text-white transition-colors">
