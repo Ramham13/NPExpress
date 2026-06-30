@@ -3,7 +3,7 @@
  * Not linked from any customer-facing navigation.
  */
 import { useState, useCallback, createContext, useContext } from "react";
-import { useAdmin } from "@/context/AdminContext";
+import { useAdmin, ADMIN_KEY_SESSION_STORAGE } from "@/context/AdminContext";
 import {
   type AdminSize, type ColorOption, type PricingTier,
   DEFAULT_COLOR_PALETTE, ADMIN_DEFAULT_SIZES,
@@ -35,6 +35,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     if (input === ADMIN_PASSWORD) {
       sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+      sessionStorage.setItem(ADMIN_KEY_SESSION_STORAGE, input);
       setUnlocked(true);
       setError(false);
     } else {
@@ -45,6 +46,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
 
   function handleLock() {
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    sessionStorage.removeItem(ADMIN_KEY_SESSION_STORAGE);
     setUnlocked(false);
     setInput("");
     setError(false);

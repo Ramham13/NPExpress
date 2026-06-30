@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: admin
+    description: Admin configuration operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /admin/config:
+    get:
+      operationId: getAdminConfig
+      tags: [admin]
+      summary: Get admin configuration
+      description: Returns the current admin configuration (sizes, pricing, colors)
+      responses:
+        "200":
+          description: Admin configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfig"
+    put:
+      operationId: putAdminConfig
+      tags: [admin]
+      summary: Save admin configuration
+      description: Replaces the entire admin configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminConfigInput"
+      responses:
+        "200":
+          description: Updated admin configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfig"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +66,89 @@ components:
           type: string
       required:
         - status
-
+    PricingTier:
+      type: object
+      required:
+        - minQty
+        - priceEach
+      properties:
+        minQty:
+          type: number
+        priceEach:
+          type: number
+    ColorOption:
+      type: object
+      required:
+        - id
+        - label
+        - hex
+        - enabled
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        hex:
+          type: string
+        enabled:
+          type: boolean
+    AdminSize:
+      type: object
+      required:
+        - id
+        - label
+        - width
+        - height
+        - description
+        - active
+        - sortOrder
+        - basePrice
+        - pricingTiers
+        - colors
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        width:
+          type: number
+        height:
+          type: number
+        description:
+          type: string
+        active:
+          type: boolean
+        sortOrder:
+          type: number
+        basePrice:
+          type: number
+        pricingTiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PricingTier"
+        colors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ColorOption"
+    AdminConfig:
+      type: object
+      required:
+        - configured
+        - sizes
+      properties:
+        configured:
+          type: boolean
+          description: True when a config row exists in the database; false on first run
+        sizes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminSize"
+    AdminConfigInput:
+      type: object
+      required:
+        - sizes
+      properties:
+        sizes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminSize"

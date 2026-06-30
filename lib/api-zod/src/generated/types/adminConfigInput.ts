@@ -5,7 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminSize } from './adminSize';
 
-export interface HealthStatus {
-  status: string;
+export interface AdminConfigInput {
+  sizes: AdminSize[];
 }
