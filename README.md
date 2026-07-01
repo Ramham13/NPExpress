@@ -1,107 +1,99 @@
 # Nameplates Express
 
-A browser-based ordering platform for **custom anodized aluminum nameplates**. Customers design their plates interactively, see a real-time high-fidelity preview, and submit orders via PayPal or a manual quote request. Admins manage product sizes, pricing tiers, and color options from a separate unlisted dashboard.
+Nameplates Express is a browser-based ordering platform for custom anodized aluminum nameplates. Customers can configure plate size, color, text layout, bulk CSV rows, cart contents, and checkout details. The application persists admin configuration and canonical order records locally, then hands finalized orders to n8n for downstream email, invoice, and order-intake orchestration.
 
----
+The repository currently represents a local Docker testing environment and public source mirror. It is functional for local validation, but it still has blocking production-readiness issues tracked in the local Gitea issue list and summarized in [docs/AUDIT_FINDINGS.md](docs/AUDIT_FINDINGS.md).
 
-## Table of Contents
+## Current State
 
-1. [Overview](#overview)
-2. [Features](#features)
-3. [Tech Stack](#tech-stack)
-4. [Project Structure](#project-structure)
-5. [Local Development](#local-development)
-6. [Application Routes](#application-routes)
-7. [Designer — How It Works](#designer--how-it-works)
-8. [CSV Bulk Import](#csv-bulk-import)
-9. [Cart and Checkout](#cart-and-checkout)
-10. [Admin Dashboard](#admin-dashboard)
-11. [Overflow Detection Logic](#overflow-detection-logic)
-12. [Data Persistence](#data-persistence)
-13. [Pricing Engine](#pricing-engine)
-14. [Known Limitations and TODOs](#known-limitations-and-todos)
+- Frontend: React, Vite, TypeScript, Tailwind, shadcn-style UI primitives.
+- API: Express running under Node.js.
+- Database: PostgreSQL in the Docker stack for admin configuration and order workflow state.
+- Local runtime: Docker Compose publishes the app at `http://127.0.0.1:8090`.
+- Admin route: `/admin`, unlocked by the local environment password.
+- n8n integration: outbound finalized-order webhook plus inbound confirmation callback.
+- Public GitHub remote: `https://github.com/Ramham13/NPExpress.git`.
+- Local Gitea mirror: used as an isolated backup and issue tracker.
 
----
+## Repository Layout
 
-## Overview
+| Path | Purpose |
+| --- | --- |
+| `artifacts/nameplates-express` | Main React customer/admin application |
+| `artifacts/api-server` | Express API for admin config, order persistence, and n8n handoff |
+| `lib/db` | Shared database schema and connection helpers |
+| `lib/api-spec` | OpenAPI specification |
+| `lib/api-client-react` | Generated React-facing API client |
+| `lib/api-zod` | Generated Zod API types |
+| `docker` | PostgreSQL init scripts and local environment template |
+| `docs` | Deployment, audit, and n8n integration notes |
 
-Nameplates Express is a **React + Vite ordering app** with a local Express API and PostgreSQL-backed admin and order stores for testing and development. Customer design state still lives in the browser, but the admin dashboard now persists sizes, colors, and workflow settings through the API so it behaves like a real shared environment. Orders are submitted either through the PayPal JavaScript SDK (sandbox mode) or as a "quote request" flow that produces a confirmation screen and a local order record.
+## Local Docker Setup
 
-The application is structured as a pnpm workspace artifact at `artifacts/nameplates-express/`.
+1. Create the local environment file:
 
----
+   ```powershell
+   Copy-Item docker/.env.local.example docker/.env.local
+   ```
 
-## Local Docker
+2. Edit `docker/.env.local` for the local machine. Keep this file private; it is ignored by git.
 
-This repo includes a local Docker stack for testing.
+3. Build and start the stack:
 
-```bash
-docker compose up -d --build
+   ```powershell
+   docker compose up -d --build
+   ```
+
+4. Open the site:
+
+   - Customer app: `http://127.0.0.1:8090/`
+   - Admin app: `http://127.0.0.1:8090/admin`
+   - API health: `http://127.0.0.1:8090/api/health`
+
+5. Stop the stack:
+
+   ```powershell
+   docker compose down
+   ```
+
+The Compose stack starts the web/API container and a PostgreSQL container. Database-backed admin configuration and order workflow state persist in the configured Docker volumes until those volumes are removed.
+
+## Development Without Docker
+
+Install workspace dependencies with pnpm, then run the workspace scripts from the repository root:
+
+```powershell
+pnpm install
+pnpm -C artifacts/nameplates-express dev
+pnpm -C artifacts/api-server dev
 ```
 
-That starts:
+The local development path expects compatible Node.js and pnpm versions. If pnpm is not available globally, use Corepack or `npm exec pnpm@<version>` from a Node.js environment.
 
-- the web app at `http://127.0.0.1:8090`
-- the API at `http://127.0.0.1:8090/api`
-- a local PostgreSQL container for admin config persistence
+## Runtime Routes
 
-The admin password for the local stack is stored in `docker/.env.local` and is currently set to `local-dev-password`.
+| Route | Description |
+| --- | --- |
+| `/` | Customer-facing storefront and nameplate designer |
+| `/admin` | Admin configuration dashboard |
+| `/cart` | Cart review |
+| `/checkout` | Customer checkout flow |
+| `/checkout/done` | PayPal completion screen |
+| `/quote/done` | Manual quote completion screen |
+| `/api/health` | API health check |
+| `/api/admin/unlock` | Admin password unlock endpoint |
+| `/api/admin/config` | Admin configuration read/write endpoint |
+| `/api/orders` | Local order creation/listing endpoint |
+| `/api/orders/:orderId/n8n/send` | Outbound n8n send trigger |
+| `/api/webhooks/n8n/order-confirmation` | Inbound n8n confirmation callback |
 
-The admin page now also stores sandbox workflow settings in the database-backed admin config record. The n8n URL and callback secret entered there are what the backend sender reads for live handoff behavior, with environment variables only acting as fallback defaults.
+## Order Lifecycle
 
-The app now treats n8n as the downstream orchestration layer for order-intake email and invoice/receipt handling. The website still persists the canonical order first, then sends the finalized payload to n8n and waits for the confirmation callback before it considers the handoff complete.
+The website remains the source of truth for customer order data. n8n is treated as a downstream orchestration layer only.
 
----
-
-## Features
-
-### Customer-Facing
-
-| Feature | Description |
-|---|---|
-| **Interactive Designer** | Visual drag-to-resize segment editor with real-time SVG preview |
-| **Size Picker** | Admin-managed plate sizes displayed as a card grid |
-| **Template Library** | One-click layout templates (1-line, 2-line, 3-zone, multi-column, etc.) |
-| **Per-Zone Text Editing** | Font, size, bold, italic, horizontal + vertical alignment, word wrap |
-| **Divider Styling** | Enable/disable inter-zone dividers; solid, dotted, or dashed styles |
-| **Color Selection** | Admin-managed anodized aluminum color palette per size |
-| **Final Preview** | High-fidelity, clean SVG render with no editor chrome |
-| **Layout Export / Import** | Save a design as `.json` and reload it later |
-| **Overflow Detection** | Real-time two-tier overflow system (segment warning vs plate-edge error) |
-| **CSV Bulk Import** | Upload a CSV file and get a gallery preview of every row |
-| **Cart** | Multi-item cart with individual and batch (CSV) items, quantity display |
-| **PayPal Checkout** | Guest contact + shipping info → PayPal sandbox payment |
-| **Quote Request** | Submit order for manual pricing without immediate payment |
-| **Order Confirmation** | Printable confirmation screen with order number (`NX-YYYY-XXXXX`) |
-
-### Admin-Only (unlisted, `/admin`)
-
-| Feature | Description |
-|---|---|
-| **Size Management** | Create / edit / delete plate sizes (width × height in inches) |
-| **Pricing Tiers** | Base price per unit + configurable quantity-break discounts |
-| **Color Palette** | Enable/disable standard colors; add custom colors with hex codes |
-| **Sort Order & Active Status** | Control which sizes appear in the size picker and in what order |
-| **Sandbox Workflow Settings** | Configure n8n webhook settings and sandbox PayPal placeholders |
-| **Recent Orders** | Inspect the latest persisted orders and their current state |
-
----
-
-## Order Orchestration
-
-The local checkout workflow now persists the canonical order first and then hands it off to n8n.
-
-### Lifecycle
-
-The order state model supports these states:
+Supported lifecycle states include:
 
 - `draft`
-- `checkout_started`
-- `payment_pending`
-- `invoice_pending`
-- `n8n_pending`
-- `n8n_acknowledged`
-- `approved`
 - `submitted`
 - `paid`
 - `invoiced`
@@ -109,571 +101,78 @@ The order state model supports these states:
 - `n8n_sent`
 - `n8n_confirmed`
 - `n8n_failed`
-- `ready`
-- `shipped`
-- `delivered`
-- `cancelled`
-- `error`
 
-### Routes
+The API persists a canonical order record before attempting any n8n handoff. Each outbound delivery attempt is logged with timestamps, attempt status, request metadata, response metadata, payload checksum, and confirmation state. Duplicate sends are blocked after n8n confirmation.
 
-| Method | Route | Purpose |
-|---|---|---|
-| `POST` | `/api/orders/finalize` | Persist the canonical order and send it to n8n |
-| `GET` | `/api/orders` | List recent persisted orders |
-| `GET` | `/api/orders/:orderId` | Fetch one order and its delivery audit log |
-| `POST` | `/api/orders/:orderId/status` | Apply a downstream status update |
-| `POST` | `/api/webhooks/n8n/order-confirmed` | Accept the n8n acknowledgement callback |
+## n8n Integration
 
-### Payload shape
+Configure n8n values either through the admin page or environment defaults:
 
-The outbound payload is JSON and includes:
+- `N8N_ORDERS_WEBHOOK_URL`
+- `N8N_CALLBACK_SECRET`
+- `N8N_SHARED_SECRET`
 
-- `orderId`
-- `orderState`
-- `paymentMethod`
-- `customer`
-- `cart`
-- `proofReferences`
-- `payment`
-- `createdAt`
+The admin configuration is the preferred local testing path because it is persisted in PostgreSQL and read by the backend sender. Environment values act as fallback defaults.
 
-### Environment variables
+See [docs/N8N_INTEGRATION.md](docs/N8N_INTEGRATION.md) for the webhook payload, callback contract, and recommended n8n workflow shape.
 
-| Variable | Purpose |
-|---|---|
-| `ADMIN_PASSWORD` | Admin unlock password for the local stack |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `N8N_ORDERS_WEBHOOK_URL` | Fallback outbound webhook target for finalized orders |
-| `N8N_CALLBACK_SECRET` | Fallback shared token for the n8n acknowledgement callback |
-| `N8N_SHARED_SECRET` | Fallback shared HMAC secret for correlating order/webhook requests |
+## Admin Configuration
 
-### Manual test checklist
+The admin page manages:
 
-1. Open `http://127.0.0.1:8090`.
-2. Build a plate design and add it to the cart.
-3. Fill in checkout details and choose PayPal sandbox or invoice/manual payment.
-4. Confirm the order appears in `GET /api/orders`.
-5. Use the admin page to set your sandbox n8n webhook settings.
-6. Send a simulated callback to `POST /api/webhooks/n8n/order-confirmed`.
-7. Update the order with `POST /api/orders/:orderId/status`.
-8. Verify the admin page shows the saved workflow settings and recent orders.
+- product sizes
+- pricing tiers
+- available plate colors
+- n8n webhook URL
+- n8n callback/shared secrets
 
-## Tech Stack
+The admin page no longer exposes a reset-to-defaults button because long-term deployments should treat product configuration as persistent data, not disposable seed state.
 
-| Layer | Technology |
-|---|---|
-| **Framework** | React 18 + Vite 5 |
-| **Language** | TypeScript 5.9 (strict) |
-| **Routing** | [wouter](https://github.com/molefrog/wouter) (lightweight, no React Router) |
-| **UI Components** | [shadcn/ui](https://ui.shadcn.com/) (Radix primitives + Tailwind) |
-| **Styling** | Tailwind CSS v4 |
-| **Icons** | [lucide-react](https://lucide.dev/) |
-| **SVG Rendering** | Inline SVG (no canvas, no external charting lib) |
-| **Text Measurement** | Offscreen `<canvas>` (`CanvasRenderingContext2D.measureText`) |
-| **Payments** | PayPal JS SDK (sandbox) via CDN script tag |
-| **State** | React `useState` / `useReducer` / `useContext` — no Redux/Zustand |
-| **Persistence** | PostgreSQL for admin config and order records |
-| **Build** | Vite (`pnpm --filter @workspace/nameplates-express run dev`) |
-| **Package Manager** | pnpm workspaces (monorepo) |
-| **Node** | ≥ 20 (Node 24 in CI) |
+## Data Storage
 
----
+Local persistence is handled by PostgreSQL. The current app stores:
 
-## Project Structure
+- admin product and workflow configuration
+- canonical orders
+- order line-item/nameplate payload data
+- order lifecycle state
+- n8n delivery attempts and confirmation metadata
 
-```
-artifacts/nameplates-express/
-├── src/
-│   ├── App.tsx                    # Wouter router, cart state, app shell
-│   ├── main.tsx                   # React root, font preloads
-│   ├── index.css                  # Tailwind directives + CSS variables (dark theme)
-│   │
-│   ├── pages/
-│   │   ├── Designer.tsx           # Main designer page (size picker + editor + panel)
-│   │   ├── CsvView.tsx            # CSV bulk-import flow
-│   │   ├── CartView.tsx           # Order summary / cart
-│   │   ├── CheckoutGuest.tsx      # Guest contact + shipping form
-│   │   ├── CheckoutReview.tsx     # Order review + PayPal / Quote buttons
-│   │   ├── OrderConfirmation.tsx  # Post-submission confirmation screen
-│   │   └── AdminPage.tsx          # Admin dashboard (sizes, pricing, colors)
-│   │
-│   ├── components/
-│   │   └── PlateFinalPreview.tsx  # High-fidelity SVG renderer (used in cart, CSV, confirmation)
-│   │
-│   ├── context/
-│   │   └── AdminContext.tsx       # React context wrapping admin API-backed store
-│   │
-│   ├── lib/
-│   │   ├── plate-utils.ts         # Core geometry, text layout, overflow detection
-│   │   └── admin-store.ts         # Admin settings defaults + browser cache helpers
-│   │
-│   └── data/
-│       └── templates.ts           # Font options, default templates, TagSize type, ZoneConfig type
-│
-├── index.html                     # Vite entry point (PayPal SDK CDN script injected here)
-├── vite.config.ts                 # Vite config (base path from env, host: true)
-├── tsconfig.json                  # TypeScript config (extends base, noEmit)
-├── tailwind.config.ts             # Tailwind config
-└── package.json                   # Package metadata, dev/build scripts
+Do not move canonical order storage into n8n. n8n should receive already-finalized order payloads and perform external actions such as email, invoice, proof-package assembly, and order-intake notification.
+
+## Testing
+
+Relevant automated tests live under:
+
+```text
+artifacts/nameplates-express/src/lib/__tests__/
 ```
 
-### Key Source-of-Truth Files
+Important test coverage includes:
 
-| Concern | File |
-|---|---|
-| Database schema | N/A — no database |
-| Admin product data | PostgreSQL admin config record, with a local browser cache for instant paint |
-| Plate geometry types | `src/lib/plate-utils.ts` (`TextZone`, `ZoneConfig`, `TagSize`) |
-| Font list | `src/data/templates.ts` (`FONT_OPTIONS`) |
-| Default plate templates | `src/data/templates.ts` (`TEMPLATES`) |
-| Overflow detection | `src/lib/plate-utils.ts` (`computeOverflowMap`) |
-| SVG constants | `src/lib/plate-utils.ts` (`SVG_VW = 1000`, `PAD_RATIO = 0.04`) |
+- admin configuration schema behavior
+- order state transitions
+- order workflow payload generation
+- n8n confirmation handling
+- retry/failure behavior
+- add-to-cart guard behavior
 
----
+Run tests from a prepared workspace:
 
-## Local Development
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) ≥ 20
-- [pnpm](https://pnpm.io/) ≥ 9
-
-### Start the dev server
-
-```bash
-# From the monorepo root:
-pnpm --filter @workspace/nameplates-express run dev
+```powershell
+pnpm -C artifacts/nameplates-express test
 ```
 
-The app is served via the Replit workflow system. In Replit, use the **"web" workflow** (`artifacts/nameplates-express: web`) which runs the command above and binds to the `PORT` environment variable.
-
-**Do not** run `pnpm run dev` at the monorepo root — there is no root `dev` script.
-
-### Typecheck
-
-```bash
-pnpm --filter @workspace/nameplates-express run typecheck
-```
-
-Or from root:
-
-```bash
-pnpm run typecheck
-```
-
-### Build (production)
-
-```bash
-pnpm --filter @workspace/nameplates-express run build
-```
-
-Requires `PORT` and `BASE_PATH` environment variables to be set (the Replit workflow wires these up automatically).
-
----
-
-## Application Routes
-
-All routes are handled client-side by **wouter**. There is no server-side routing.
-
-| Path | Component | Notes |
-|---|---|---|
-| `/` | `Designer.tsx` | Main entry point — size picker then editor |
-| `/csv` | `CsvView.tsx` | Bulk CSV import (entered from the editor) |
-| `/cart` | `CartView.tsx` | Cart summary |
-| `/checkout/guest` | `CheckoutGuest.tsx` | Contact + shipping form |
-| `/checkout/review` | `CheckoutReview.tsx` | Order review + payment |
-| `/order-confirmation` | `OrderConfirmation.tsx` | Post-submission confirmation |
-| `/admin` | `AdminPage.tsx` | Admin dashboard — **not linked in any customer UI** |
-
----
-
-## Designer — How It Works
-
-### 1. Size Picker
-
-The first screen customers see. Plate sizes come from the admin API-backed store. Only sizes with `active: true` are shown, sorted by `sortOrder`.
-
-Each size card shows the aspect ratio as a visual rectangle, the dimensions in inches, the base price, and available anodized colors as color swatches.
-
-### 2. Template Selection
-
-After selecting a size, customers can click a template from the `TEMPLATES` array in `templates.ts`. Each template specifies:
-- `direction`: `"horizontal"` (rows) or `"vertical"` (columns)
-- `segments`: array of relative heights/widths (must sum to 100)
-- `compatibleSizes`: which size IDs this template is appropriate for
-
-Selecting a template resets the zone configuration and applies the template's text defaults.
-
-### 3. Interactive Geometry Editor (`PlatePreview`)
-
-The editor renders the plate as an SVG with `viewBox="0 0 1000 VH"` where `VH = round(1000 × height / width)`. All geometry is computed in SVG units using the constants:
-
-- `SVG_VW = 1000` — SVG viewport width in arbitrary units
-- `PAD_RATIO = 0.04` — 4% padding on each side for the plate border
-
-**Inner plate area:**
-```
-innerW = SVG_VW - 2 × (SVG_VW × PAD_RATIO)  =  920 units
-innerH = VH − 2 × (VH × PAD_RATIO)
-```
-
-Each `TextZone` occupies a percentage of the inner area:
-```typescript
-interface TextZone {
-  id: string;
-  label: string;        // "Line 1", "Column A", etc.
-  xPct: number;         // left edge as % of innerW
-  yPct: number;         // top edge as % of innerH
-  widthPct: number;     // width as % of innerW
-  heightPct: number;    // height as % of innerH
-  multiline: boolean;
-}
-```
-
-### 4. Drag-to-Resize Dividers
-
-Divider handles are rendered as invisible wide SVG `<rect>` elements on top of the visible divider line. They use **pointer events** (not mouse events) to support both touch and mouse:
-
-- `onPointerDown` → capture pointer to the SVG element (`setPointerCapture`)
-- `onPointerMove` → compute new zone proportions
-- `onPointerUp` → release capture and snap to 5% increments
-
-The drag delta is computed in SVG-unit space by converting the `clientY` / `clientX` change to SVG units using the element's `getBoundingClientRect()` and the SVG viewBox aspect ratio.
-
-### 5. Per-Zone Text Configuration (`ZoneConfig`)
-
-```typescript
-interface ZoneConfig {
-  text: string;
-  fontId: string;        // key into FONT_OPTIONS
-  fontSize: number;      // points (6–120)
-  bold: boolean;
-  italic: boolean;
-  hAlign: "left" | "center" | "right";
-  vAlign: "top" | "center" | "bottom";
-  wordWrap: boolean;
-}
-```
-
-All configs are stored in `lineConfigs: Record<zoneId, ZoneConfig>` in the top-level `Designer` component state.
-
-### 6. Text Layout (`computeTextLayout` in `plate-utils.ts`)
-
-Text is rendered as SVG `<text>` elements. The layout function:
-
-1. Looks up the font family from `FONT_OPTIONS`
-2. Converts point size to SVG pixels: `ptToSvgPx(pt, plateWidthInches)` — scales so that `1pt` at `1 inch wide` plate = `SVG_VW / 72` px
-3. Splits text into lines (manual `\n` splits, or word-wrap via `wrapWords`)
-4. Computes `textX` based on `hAlign` and `textAnchor` (`"start"` / `"middle"` / `"end"`)
-5. Computes `firstLineY` based on `vAlign` and total text block height
-6. Renders each line with `dominantBaseline="hanging"` for predictable top-aligned positioning
-
-Text is clipped to its zone via a `<clipPath>` element.
-
-### 7. Final Preview (`PlateFinalPreview.tsx`)
-
-A separate read-only SVG renderer used in:
-- The right panel of the designer ("Product Preview" tab)
-- The CSV bulk import gallery
-- The cart
-- The order confirmation screen
-
-It renders the same geometry as the editor but without zone borders, handles, or overflow badges. It applies the chosen anodized color as the plate background.
-
----
-
-## CSV Bulk Import
-
-Accessed via the "Bulk Add from CSV" button in the designer panel.
-
-### CSV Format
-
-The first row must be a **header row**. Column names must match the zone labels exactly (case-insensitive). Extra columns are ignored. Missing columns get an empty string.
-
-**Example** (for a 2-line horizontal design):
-
-```csv
-Line 1,Line 2
-PUMP-001,Boiler Feed
-PUMP-002,Cooling Water
-VALVE-A7,Main Steam Inlet
-```
-
-A template CSV can be downloaded from the "Download Template" button within the CSV upload page — it is auto-generated from the current design's zone labels.
-
-### Validation
-
-Each row is validated individually:
-
-| Condition | Status | Outcome |
-|---|---|---|
-| All text fits within every segment | ✅ Green | Included in cart batch |
-| Text overflows a segment boundary but fits on the plate | ⚠️ Amber | **Included** with warning label |
-| Text physically extends past the nameplate edge | ❌ Red | **Excluded** from cart batch |
-
-### Adding to Cart
-
-Clicking "Add N Nameplates to Cart" creates a **batch cart item** with a shared `batchId`. The cart view groups batch items together and displays them as a batch with a thumbnail count.
-
----
-
-## Cart and Checkout
-
-### Cart State
-
-Cart state lives in `App.tsx` as `const [cart, setCart] = useState<CartItem[]>([])`. It is **not** persisted to localStorage (intentional — cart resets on page refresh).
-
-```typescript
-interface CartItem {
-  id: string;          // unique per item
-  batchId?: string;    // set for CSV batch items; groups siblings
-  size: TagSize;
-  direction: Direction;
-  heights: number[];   // zone height percentages
-  widths: number[];    // zone width percentages
-  lineConfigs: ZoneConfigs;
-  dividers: DividerConfig[];
-  color: string;       // color id from admin color palette
-}
-```
-
-### Pricing
-
-Pricing is computed in `CartView.tsx` using the `size.pricing` from the admin store:
-
-```typescript
-interface PricingTier {
-  minQty: number;   // minimum quantity to qualify for this tier
-  price: number;    // price per unit at this tier
-}
-```
-
-The applicable tier is the highest `minQty` that is ≤ the current total quantity for that size. The base price is used if no tier applies.
-
-### Checkout Flow
-
-1. **`/cart`** — Order summary. Customers review items and click "Proceed to Checkout".
-2. **`/checkout/guest`** — Contact and shipping form (name, email, company, address fields). No authentication required.
-3. **`/checkout/review`** — Final order review showing item thumbnails, quantities, and line totals.
-   - **PayPal button**: Renders the PayPal JS SDK button. Currently in **sandbox mode**. On approval, redirects to `/order-confirmation`.
-   - **Request a Quote**: Skips payment and goes directly to `/order-confirmation` with a quote-mode flag.
-4. **`/order-confirmation`** — Displays a generated order number (`NX-YYYY-RANDOM`) and a summary for printing.
-
----
-
-## Admin Dashboard
-
-**Route: `/admin`** — not linked from any customer-facing page.
-
-> ⚠️ **Security Note**: The admin page currently has **no authentication**. Anyone who knows the URL can access it. A password gate is planned as a follow-up task (see Task #2).
-
-### Accessing the Admin Page
-
-Navigate directly to `/admin` in the browser.
-
-### Admin Data Schema (`admin-store.ts`)
-
-```typescript
-interface AdminSize {
-  id: string;
-  label: string;         // e.g. "6\" × 2\""
-  width: number;         // inches
-  height: number;        // inches
-  active: boolean;       // shown in the size picker when true
-  sortOrder: number;     // display order (lower = first)
-  pricing: {
-    basePrice: number;
-    tiers: PricingTier[];
-  };
-  colors: AdminColor[];
-}
-
-interface AdminColor {
-  id: string;            // e.g. "black", "custom-1718234567"
-  label: string;         // e.g. "Black", "Cobalt Blue"
-  hex: string;           // e.g. "#1a1a1a"
-  enabled: boolean;
-}
-```
-
-### Persistence
-
-All admin settings are persisted to the database-backed admin config record and mirrored into the browser cache for instant paint. Changes take effect immediately for all open tabs once the API save completes.
-
-**Default sizes** are seeded from `admin-store.ts` on first load if the API has no admin config row yet.
-
-### Admin Operations
-
-| Action | Notes |
-|---|---|
-| Create size | Width and height must be landscape (width > height enforced) |
-| Edit size | Opens an inline edit form; changes save immediately to the API-backed admin config |
-| Delete size | Removes size and all its pricing/color config permanently |
-| Toggle active | Shows/hides size in the customer size picker |
-| Set sort order | Integer field; sizes are sorted ascending |
-| Set base price | Price per unit when no quantity tier applies |
-| Add pricing tier | Minimum quantity + price per unit at that quantity |
-| Remove pricing tier | Button per row |
-| Enable/disable color | Toggle per color for this size |
-| Add custom color | Hex code input + label |
-| Remove custom color | Button per custom color entry |
-
----
-
-## Overflow Detection Logic
-
-Overflow is computed in real-time via `computeOverflowMap` in `plate-utils.ts`. It uses an offscreen `<canvas>` element and `CanvasRenderingContext2D.measureText()` to measure actual rendered text widths for each font/size combination — no font-metric approximations.
-
-### Two-Tier Overflow System
-
-#### Tier 1: Segment / Zone Overflow (non-blocking — amber ⚠)
-
-Text is wider than its assigned zone (width overflow) or the wrapped/stacked text is taller than the zone height. This is a **warning only** — the user can still add the item to the cart. The affected zone is highlighted with an amber border in the editor preview.
-
-**When this applies:**
-- `maxLineW > zoneWidth` (width overflow, word wrap disabled)
-- `totalLineHeight > zoneHeight` (height overflow)
-
-#### Tier 2: Plate Boundary Overflow (hard block — red ✕)
-
-Text physically extends past the edge of the nameplate. This **blocks** adding to cart and excludes the row from CSV import.
-
-Computed per alignment:
-```
-center:  textLeft = zoneCenter − maxLineW/2 < 0  OR  textRight = zoneCenter + maxLineW/2 > innerW
-left:    textRight = zoneX + maxLineW > innerW
-right:   textLeft = zoneX + zoneW − maxLineW < 0
-height:  zoneY + totalHeight > innerH
-```
-
-### Designer UI Responses
-
-| State | Zone border | Badge | Add-to-Order button |
-|---|---|---|---|
-| No overflow | Dim grey | — | Enabled (blue) |
-| Segment overflow only | Amber | "⚠ Segment overflow" | Enabled (blue) |
-| Plate boundary overflow | Red | "✕ Past plate edge" | Disabled (grey) |
-
-### CSV Import Responses
-
-| State | Card border | Footer icon | Included in cart? |
-|---|---|---|---|
-| No overflow | Slate | ✅ Green | Yes |
-| Segment overflow only | Amber | ⚠ Amber | Yes (with warning) |
-| Plate boundary overflow | Red | ✕ Red | No |
-
----
-
-## Data Persistence
-
-| Data | Storage | Reset on page refresh? |
-|---|---|---|
-| Cart items | React state (`App.tsx`) | **Yes** — cart is cleared on refresh |
-| Current design (zones, text, dividers) | React state (`Designer.tsx`) | **Yes** |
-| Admin sizes, pricing, colors, workflow settings | PostgreSQL admin config record | No — persists indefinitely |
-| Guest checkout form | React state (`CheckoutGuest.tsx`) | **Yes** |
-
-> **Note**: Because the cart resets on refresh, customers completing checkout should be advised to do so in one session.
-
----
-
-## Pricing Engine
-
-### How Tiers Work
-
-Given a size with:
-```
-basePrice: $6.00
-tiers: [
-  { minQty: 10, price: 4.50 },
-  { minQty: 25, price: 3.75 },
-  { minQty: 50, price: 3.00 },
-]
-```
-
-And the customer orders 18 plates of this size:
-- Applicable tier = the tier with `minQty ≤ 18` with the highest `minQty` = tier at `minQty: 10`
-- Unit price = `$4.50`
-- Line total = `18 × $4.50 = $81.00`
-
-Pricing is computed **per-size** across the entire cart (all items of the same size share a quantity pool).
-
-### Adding Tiers via Admin
-
-Tiers are created in the admin size editor. There is no minimum or maximum number of tiers. A size with no tiers always uses the base price.
-
----
-
-## Known Limitations and TODOs
-
-### Security`r`n`r`n- **Admin page has no password protection.** (Follow-up task planned.) Anyone who knows the URL `/admin` can modify pricing, colors, and sizes.`r`n- Admin changes are stored server-side in the database-backed admin config record. For production, make sure the admin page is protected and the database is backed up.
-
-### Payments
-
-- **PayPal is in sandbox mode.** No real money is processed. To go live, replace the sandbox client ID in `index.html` with a production PayPal client ID and remove the `data-env="sandbox"` flag.
-- The "Request a Quote" flow now records a local order and hands it off through the same order workflow, but the downstream email/invoice fulfillment still depends on your n8n workflow being configured and reachable.
-
-### Cart
-
-- **Cart is not persisted.** Refreshing the page clears all items. A future version should persist cart to `localStorage` or `sessionStorage`.
-
-### Fonts
-
-- Fonts are loaded from Google Fonts (CDN). An offline or slow connection may cause text measurement to fall back to the system default, leading to inaccurate overflow detection.
-
-### Browser Support
-
-- Text measurement (`canvas.measureText`) and SVG rendering are used throughout. Fully supported in all modern browsers (Chrome, Firefox, Safari, Edge). IE11 is not supported.
-
-### Landscape-Only
-
-- Plate dimensions are validated as landscape (width > height) in the admin UI. Portrait-orientation plates would require an update to the aspect ratio logic in `plate-utils.ts`.
-
----
-
-## Development Notes
-
-### Adding a New Font
-
-1. Add the Google Fonts `@import` or `<link>` for the new font in `index.html` or `index.css`.
-2. Add an entry to `FONT_OPTIONS` in `src/data/templates.ts`:
-   ```typescript
-   { id: "myfont", label: "My Font", family: "My Font, sans-serif" }
-   ```
-3. The font will automatically appear in the per-zone font picker dropdown.
-
-### Adding a New Template
-
-Add to `TEMPLATES` in `src/data/templates.ts`:
-```typescript
-{
-  id: "my-template",
-  label: "My Template",
-  description: "Short description shown in the template picker",
-  direction: "horizontal",
-  segments: [50, 50],        // percentage heights (must sum to 100)
-  compatibleSizes: [],       // empty array = compatible with all sizes
-  defaultConfigs: {
-    "zone-0": { text: "Top Line", fontSize: 24 },
-    "zone-1": { text: "Bottom Line", fontSize: 18 },
-  },
-}
-```
-
-### Adding a New Plate Size (Programmatically)
-
-The preferred way is via the admin dashboard at `/admin`. To seed a new default size in code, add it to the `DEFAULT_SIZES` array in `src/lib/admin-store.ts`.
-
----
-
-## Repository
-
-**GitHub:** https://github.com/Ramham13/NPExpress
-
-Push method (PAT auth, no remote add required):
-```bash
-git push "https://x-access-token:${GITHUB_PAT}@github.com/Ramham13/NPExpress.git" main
-```
-
-The `GITHUB_PAT` secret is stored in Replit Secrets (never commit or print it).
+## Repository Hygiene
+
+- Keep `docker/.env.local` private and untracked.
+- Commit only environment templates such as `docker/.env.local.example`.
+- Do not commit API keys, webhook secrets, passwords, database dumps, dependency caches, or generated build output.
+- Public GitHub is for source visibility and collaboration.
+- Local Gitea is the isolated backup and issue tracker for deployment blockers.
+
+## Documentation
+
+- [docs/AUDIT_FINDINGS.md](docs/AUDIT_FINDINGS.md) - Current blocking issues and deployment readiness notes.
+- [docs/N8N_INTEGRATION.md](docs/N8N_INTEGRATION.md) - n8n webhook setup and callback contract.
+- [docs/DEPLOYMENT_NOTES.md](docs/DEPLOYMENT_NOTES.md) - Docker, GitHub, and local mirror deployment notes.
