@@ -65,6 +65,10 @@ describe("order workflow routes", () => {
       paymentMethod: "invoice",
     });
     expect(order.payload.orderState).toBe("invoiced");
+    expect(order.payload.proofReferences).toEqual([
+      { label: "Printable proof document", url: `/api/orders/${response.body.orderId}/proof.html` },
+      { label: "Proof data package", url: `/api/orders/${response.body.orderId}/proof-package.json` },
+    ]);
     expect(attempt).toMatchObject({
       orderId: response.body.orderId,
       attemptNumber: 1,
@@ -171,5 +175,68 @@ describe("order workflow routes", () => {
       confirmationState: "awaiting",
     });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves a printable proof document and structured proof package for persisted orders", async () => {
+    seedWorkflowSettings();
+    vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
+
+    const finalizeResponse = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "invoice",
+        paymentStatus: "pending",
+        customer: {
+          name: "Jane Smith",
+          company: "Example Industries",
+          email: "jane@example.com",
+        },
+        cart: [{
+          id: "plate-1",
+          label: "Control Panel Plate",
+          color: "black",
+          direction: "horizontal",
+          size: { id: "6x2", label: '6" x 2"', width: 6, height: 2 },
+          lineConfigs: {
+            line1: { text: "PUMP 01", font: "Arial", fontSize: 18, bold: true },
+          },
+          dividers: [],
+          heights: [100],
+          widths: [100],
+        }],
+      });
+
+    const orderId = finalizeResponse.body.orderId as string;
+
+    const packageResponse = await request(app)
+      .get(`/api/orders/${orderId}/proof-package.json`)
+      .set(adminHeaders());
+    expect(packageResponse.status).toBe(200);
+    expect(packageResponse.body).toMatchObject({
+      schemaVersion: "2026-07-proof-package-v1",
+      orderId,
+      customer: {
+        name: "Jane Smith",
+        company: "Example Industries",
+        email: "jane@example.com",
+      },
+      lineItems: [
+        {
+          itemId: "plate-1",
+          label: "Control Panel Plate",
+          size: { label: '6" x 2"' },
+          textZones: [{ zoneId: "line1", text: "PUMP 01", font: "Arial", fontSize: 18 }],
+        },
+      ],
+    });
+
+    const htmlResponse = await request(app)
+      .get(`/api/orders/${orderId}/proof.html`)
+      .set(adminHeaders());
+    expect(htmlResponse.status).toBe(200);
+    expect(htmlResponse.headers["content-type"]).toContain("text/html");
+    expect(htmlResponse.text).toContain("Nameplates Express Proof Document");
+    expect(htmlResponse.text).toContain("Control Panel Plate");
+    expect(htmlResponse.text).toContain("/proof-package.json");
   });
 });

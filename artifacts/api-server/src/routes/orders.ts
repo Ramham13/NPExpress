@@ -60,9 +60,104 @@ function escapeXml(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
+function buildProofReferences(orderId: string) {
+  return [
+    {
+      label: "Printable proof document",
+      url: `/api/orders/${orderId}/proof.html`,
+    },
+    {
+      label: "Proof data package",
+      url: `/api/orders/${orderId}/proof-package.json`,
+    },
+  ];
+}
+
+function getCartItems(payload: Record<string, unknown>) {
+  return Array.isArray(payload.cart) ? payload.cart as Record<string, unknown>[] : [];
+}
+
+function getProofPackage(orderId: string, payload: Record<string, unknown>) {
+  const customer = (payload.customer ?? {}) as Record<string, unknown>;
+  const cart = getCartItems(payload);
+  const proofReferences = Array.isArray(payload.proofReferences) ? payload.proofReferences as Array<Record<string, unknown>> : [];
+  const payment = (payload.payment ?? {}) as Record<string, unknown>;
+
+  return {
+    schemaVersion: "2026-07-proof-package-v1",
+    orderId,
+    generatedAt: new Date().toISOString(),
+    orderState: String(payload.orderState ?? "unknown"),
+    customer: {
+      name: customer.name ?? customer.companyName ?? null,
+      company: customer.company ?? customer.companyName ?? null,
+      email: customer.email ?? null,
+      phone: customer.phone ?? null,
+      shippingAddress: {
+        address1: customer.address1 ?? null,
+        address2: customer.address2 ?? null,
+        city: customer.city ?? null,
+        state: customer.state ?? null,
+        zip: customer.zip ?? null,
+        country: customer.country ?? null,
+      },
+      billingAddress: {
+        address1: customer.billingAddress1 ?? null,
+        address2: customer.billingAddress2 ?? null,
+        city: customer.billingCity ?? null,
+        state: customer.billingState ?? null,
+        zip: customer.billingZip ?? null,
+        country: customer.billingCountry ?? null,
+      },
+      notes: customer.notes ?? null,
+    },
+    payment: {
+      method: payload.paymentMethod ?? null,
+      provider: payment.provider ?? null,
+      status: payment.status ?? null,
+    },
+    proofAssets: proofReferences.map((reference, index) => ({
+      itemNumber: index + 1,
+      label: String(reference.label ?? `Proof asset ${index + 1}`),
+      url: String(reference.url ?? ""),
+    })),
+    lineItems: cart.map((item, index) => {
+      const size = (item.size ?? {}) as Record<string, unknown>;
+      const lineConfigs = (item.lineConfigs ?? {}) as Record<string, Record<string, unknown>>;
+      const zoneTexts = Object.entries(lineConfigs).map(([zoneId, config]) => ({
+        zoneId,
+        text: String(config?.text ?? ""),
+        font: config?.font ?? null,
+        fontSize: config?.fontSize ?? null,
+        bold: Boolean(config?.bold ?? false),
+        italic: Boolean(config?.italic ?? false),
+      }));
+
+      return {
+        itemNumber: index + 1,
+        itemId: item.id ?? null,
+        label: item.label ?? item.name ?? size.label ?? `Line item ${index + 1}`,
+        size: {
+          id: size.id ?? null,
+          label: size.label ?? null,
+          width: size.width ?? null,
+          height: size.height ?? null,
+        },
+        color: item.color ?? null,
+        direction: item.direction ?? null,
+        heights: Array.isArray(item.heights) ? item.heights : [],
+        widths: Array.isArray(item.widths) ? item.widths : [],
+        dividers: Array.isArray(item.dividers) ? item.dividers : [],
+        textZones: zoneTexts,
+        rawConfig: item,
+      };
+    }),
+  };
+}
+
 function renderProofSvg(orderId: string, payload: Record<string, unknown>) {
   const customer = (payload.customer ?? {}) as Record<string, unknown>;
-  const cart = Array.isArray(payload.cart) ? payload.cart as Record<string, unknown>[] : [];
+  const cart = getCartItems(payload);
   const proofReferences = Array.isArray(payload.proofReferences) ? payload.proofReferences as { label?: unknown; url?: unknown }[] : [];
   const lines = [
     `Order ${orderId}`,
@@ -88,6 +183,88 @@ function renderProofSvg(orderId: string, payload: Record<string, unknown>) {
   <text x="48" y="448" font-size="24" fill="#0f172a" font-family="Arial, Helvetica, sans-serif">Line items</text>
   ${itemRows}
 </svg>`;
+}
+
+function renderProofHtml(orderId: string, payload: Record<string, unknown>) {
+  const proofPackage = getProofPackage(orderId, payload);
+  const customer = proofPackage.customer;
+  const lineItems = proofPackage.lineItems.map((item) => {
+    const zoneRows = item.textZones.length > 0
+      ? item.textZones.map((zone) => `
+        <tr>
+          <td>${escapeXml(zone.zoneId)}</td>
+          <td>${escapeXml(zone.text)}</td>
+          <td>${escapeXml(zone.font)}</td>
+          <td>${escapeXml(zone.fontSize)}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="4">No text zones recorded.</td></tr>`;
+
+    return `
+      <section class="item">
+        <h2>${escapeXml(item.label)}</h2>
+        <p class="meta">Item ${item.itemNumber} | ${escapeXml(item.size.label)} | ${escapeXml(item.color)} | ${escapeXml(item.direction)}</p>
+        <table>
+          <thead>
+            <tr><th>Zone</th><th>Text</th><th>Font</th><th>Size</th></tr>
+          </thead>
+          <tbody>${zoneRows}</tbody>
+        </table>
+      </section>
+    `;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nameplates Express Proof ${escapeXml(orderId)}</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; margin: 32px; color: #0f172a; }
+      header { margin-bottom: 24px; }
+      h1 { margin: 0 0 8px; font-size: 28px; }
+      .subtle { color: #475569; font-size: 14px; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0 24px; }
+      .card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; background: #f8fafc; }
+      .card h2 { margin: 0 0 8px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: #475569; }
+      .item { margin-bottom: 20px; border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; }
+      .item h2 { margin: 0 0 4px; font-size: 18px; }
+      .meta { margin: 0 0 12px; color: #475569; font-size: 13px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; font-size: 13px; vertical-align: top; }
+      th { background: #f8fafc; }
+      ul { margin: 8px 0 0 18px; }
+      code { font-family: Consolas, monospace; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Nameplates Express Proof Document</h1>
+      <div class="subtle">Order ${escapeXml(orderId)} | State: ${escapeXml(proofPackage.orderState)} | Generated: ${escapeXml(proofPackage.generatedAt)}</div>
+    </header>
+    <section class="grid">
+      <div class="card">
+        <h2>Customer</h2>
+        <div>${escapeXml(customer.name)}</div>
+        <div>${escapeXml(customer.company)}</div>
+        <div>${escapeXml(customer.email)}</div>
+        <div>${escapeXml(customer.phone)}</div>
+      </div>
+      <div class="card">
+        <h2>Payment</h2>
+        <div>Method: ${escapeXml(proofPackage.payment.method)}</div>
+        <div>Provider: ${escapeXml(proofPackage.payment.provider)}</div>
+        <div>Status: ${escapeXml(proofPackage.payment.status)}</div>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom: 24px;">
+      <h2>Package Assets</h2>
+      <ul>
+        ${proofPackage.proofAssets.map((asset) => `<li>${escapeXml(asset.label)}: <code>${escapeXml(asset.url)}</code></li>`).join("")}
+      </ul>
+    </section>
+    ${lineItems}
+  </body>
+</html>`;
 }
 
 async function getLatestAttempt(orderId: string) {
@@ -261,10 +438,7 @@ router.post("/orders/finalize", async (req, res) => {
       paymentMethod: body.paymentMethod,
       customer: body.customer,
       cart: body.cart,
-      proofReferences: body.proofReferences ?? body.cart.map((item, idx) => ({
-        label: `Proof ${idx + 1}`,
-        url: `/api/orders/${orderId}/proof.svg?item=${encodeURIComponent(String(item?.id ?? idx))}`,
-      })),
+      proofReferences: body.proofReferences ?? buildProofReferences(orderId),
       paid: body.paymentStatus === "paid",
     });
     const payloadChecksum = checksumPayload(payload);
@@ -392,6 +566,34 @@ router.get("/orders/:orderId/proof.svg", async (req, res) => {
     return;
   }
   res.type("image/svg+xml").send(renderProofSvg(order.orderId, order.payload as Record<string, unknown>));
+});
+
+router.get("/orders/:orderId/proof.html", async (req, res) => {
+  if (!requireAdminAccess(req, res)) {
+    return;
+  }
+
+  const rows = await db.select().from(orderTable).where(eq(orderTable.orderId, req.params.orderId)).limit(1);
+  const order = rows[0];
+  if (!order) {
+    res.status(404).type("text/plain").send("Order not found");
+    return;
+  }
+  res.type("text/html").send(renderProofHtml(order.orderId, order.payload as Record<string, unknown>));
+});
+
+router.get("/orders/:orderId/proof-package.json", async (req, res) => {
+  if (!requireAdminAccess(req, res)) {
+    return;
+  }
+
+  const rows = await db.select().from(orderTable).where(eq(orderTable.orderId, req.params.orderId)).limit(1);
+  const order = rows[0];
+  if (!order) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  res.json(getProofPackage(order.orderId, order.payload as Record<string, unknown>));
 });
 
 router.post("/orders/:orderId/status", async (req, res) => {

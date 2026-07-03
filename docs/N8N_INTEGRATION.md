@@ -38,7 +38,8 @@ Expected payload categories:
 - customer contact and shipping details
 - line items
 - nameplate configuration data
-- proof references or proof payload metadata
+- printable proof document reference
+- structured proof/data package reference
 - payment or invoice metadata
 - lifecycle state
 - delivery token/signature data for correlation

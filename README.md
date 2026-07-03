@@ -90,6 +90,8 @@ Current workspace note:
 | `/api/admin/config` | Admin configuration read/write endpoint |
 | `/api/orders` | Local order creation/listing endpoint |
 | `/api/orders/:orderId/n8n/send` | Outbound n8n send trigger |
+| `/api/orders/:orderId/proof.html` | Printable proof document for the order |
+| `/api/orders/:orderId/proof-package.json` | Structured proof/data package for intake workflows |
 | `/api/webhooks/n8n/order-confirmed` | Inbound n8n confirmation callback (`/order-confirmation` is also accepted as a compatibility alias) |
 
 ## Order Lifecycle
