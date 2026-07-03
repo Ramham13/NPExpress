@@ -61,6 +61,12 @@ The outbound operation must remain idempotent. Retrying the same order should no
 After n8n validates and accepts the payload, it should call:
 
 ```text
+POST /api/webhooks/n8n/order-confirmed
+```
+
+For compatibility with earlier documentation, the API also accepts:
+
+```text
 POST /api/webhooks/n8n/order-confirmation
 ```
 

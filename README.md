@@ -90,7 +90,7 @@ Current workspace note:
 | `/api/admin/config` | Admin configuration read/write endpoint |
 | `/api/orders` | Local order creation/listing endpoint |
 | `/api/orders/:orderId/n8n/send` | Outbound n8n send trigger |
-| `/api/webhooks/n8n/order-confirmation` | Inbound n8n confirmation callback |
+| `/api/webhooks/n8n/order-confirmed` | Inbound n8n confirmation callback (`/order-confirmation` is also accepted as a compatibility alias) |
 
 ## Order Lifecycle
 
@@ -165,6 +165,7 @@ Important test coverage includes:
 Run tests from a prepared workspace:
 
 ```powershell
+pnpm -C artifacts/api-server test
 pnpm -C artifacts/nameplates-express test
 ```
 

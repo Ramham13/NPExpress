@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { desc, eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, adminConfigTable, orderDeliveryAttemptTable, orderTable } from "@workspace/db";
@@ -208,6 +208,42 @@ async function recordConfigurationFailure(args: {
     confirmationState: "failed",
   });
   await db.update(orderTable).set({ state: "n8n_failed" }).where(eq(orderTable.orderId, args.orderId));
+}
+
+async function handleN8nOrderConfirmed(req: Request, res: Response) {
+  const { orderId, token } = req.body as Record<string, unknown>;
+  if (typeof orderId !== "string" || typeof token !== "string") {
+    res.status(400).json({ error: "Missing orderId or token" });
+    return;
+  }
+  const rows = await db.select().from(orderTable).where(eq(orderTable.orderId, orderId)).limit(1);
+  const order = rows[0];
+  if (!order) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+  const workflowSettings = await getWorkflowSettings();
+  const callbackSecret = getCallbackSecret(workflowSettings);
+  const sharedSecret = getSharedSecret(workflowSettings);
+  const secrets = [
+    order.n8nDeliveryToken,
+    callbackSecret,
+    sharedSecret ? getWebhookToken(orderId, sharedSecret) : "",
+  ].filter(Boolean) as string[];
+  if (!secrets.some((secret) => token === secret)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (order.state === "n8n_confirmed") {
+    res.json({ ok: true, duplicate: true });
+    return;
+  }
+  await db.update(orderTable).set({ state: "n8n_confirmed", n8nAckReceivedAt: new Date() }).where(eq(orderTable.orderId, orderId));
+  const attempts = await db.select().from(orderDeliveryAttemptTable).where(eq(orderDeliveryAttemptTable.orderId, orderId)).orderBy(desc(orderDeliveryAttemptTable.attemptNumber), desc(orderDeliveryAttemptTable.createdAt)).limit(1);
+  if (attempts[0]) {
+    await db.update(orderDeliveryAttemptTable).set({ confirmationState: "confirmed" }).where(eq(orderDeliveryAttemptTable.id, attempts[0].id));
+  }
+  res.json({ ok: true });
 }
 
 router.post("/orders/finalize", async (req, res) => {
@@ -486,40 +522,7 @@ router.post("/orders/:orderId/retry", async (req, res) => {
   });
 });
 
-router.post("/webhooks/n8n/order-confirmed", async (req, res) => {
-  const { orderId, token } = req.body as Record<string, unknown>;
-  if (typeof orderId !== "string" || typeof token !== "string") {
-    res.status(400).json({ error: "Missing orderId or token" });
-    return;
-  }
-  const rows = await db.select().from(orderTable).where(eq(orderTable.orderId, orderId)).limit(1);
-  const order = rows[0];
-  if (!order) {
-    res.status(404).json({ error: "Order not found" });
-    return;
-  }
-  const workflowSettings = await getWorkflowSettings();
-  const callbackSecret = getCallbackSecret(workflowSettings);
-  const sharedSecret = getSharedSecret(workflowSettings);
-  const secrets = [
-    order.n8nDeliveryToken,
-    callbackSecret,
-    sharedSecret ? getWebhookToken(orderId, sharedSecret) : "",
-  ].filter(Boolean) as string[];
-  if (!secrets.some((secret) => token === secret)) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  if (order.state === "n8n_confirmed") {
-    res.json({ ok: true, duplicate: true });
-    return;
-  }
-  await db.update(orderTable).set({ state: "n8n_confirmed", n8nAckReceivedAt: new Date() }).where(eq(orderTable.orderId, orderId));
-  const attempts = await db.select().from(orderDeliveryAttemptTable).where(eq(orderDeliveryAttemptTable.orderId, orderId)).orderBy(desc(orderDeliveryAttemptTable.attemptNumber), desc(orderDeliveryAttemptTable.createdAt)).limit(1);
-  if (attempts[0]) {
-    await db.update(orderDeliveryAttemptTable).set({ confirmationState: "confirmed" }).where(eq(orderDeliveryAttemptTable.id, attempts[0].id));
-  }
-  res.json({ ok: true });
-});
+router.post("/webhooks/n8n/order-confirmed", handleN8nOrderConfirmed);
+router.post("/webhooks/n8n/order-confirmation", handleN8nOrderConfirmed);
 
 export default router;
