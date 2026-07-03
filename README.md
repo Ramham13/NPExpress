@@ -176,3 +176,4 @@ pnpm -C artifacts/nameplates-express test
 - [docs/AUDIT_FINDINGS.md](docs/AUDIT_FINDINGS.md) - Current blocking issues and deployment readiness notes.
 - [docs/N8N_INTEGRATION.md](docs/N8N_INTEGRATION.md) - n8n webhook setup and callback contract.
 - [docs/DEPLOYMENT_NOTES.md](docs/DEPLOYMENT_NOTES.md) - Docker, GitHub, and local mirror deployment notes.
+- [docs/ORDER_HANDOFF_VERIFICATION.md](docs/ORDER_HANDOFF_VERIFICATION.md) - Repeatable deployment checks for finalize, audit logging, callback, and duplicate callback handling.
