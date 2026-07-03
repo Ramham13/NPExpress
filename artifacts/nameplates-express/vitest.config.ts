@@ -8,7 +8,7 @@ export default defineConfig({
     "process.env.NODE_ENV": JSON.stringify("development"),
   },
   test: {
-    environment: "jsdom",
+    environment: "happy-dom",
     setupFiles: ["./src/lib/__tests__/setup.ts"],
     globals: true,
   },

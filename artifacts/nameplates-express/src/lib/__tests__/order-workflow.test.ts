@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { buildFinalOrderPayload, checksumPayload, makeOrderId } from "../../../../api-server/src/lib/orders";
-import { getNextAttemptNumber } from "../../../../api-server/src/routes/orders";
+import { getNextAttemptNumber } from "../../../../api-server/src/lib/order-state";
 
 describe("order workflow helpers", () => {
   it("builds a stable final order payload", () => {

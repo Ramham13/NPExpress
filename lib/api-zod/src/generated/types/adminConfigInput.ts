@@ -5,9 +5,10 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminConfigInputWorkflowSettings } from './adminConfigInputWorkflowSettings';
 import type { AdminSize } from './adminSize';
 
 export interface AdminConfigInput {
   sizes: AdminSize[];
-  workflowSettings: Record<string, any>;
+  workflowSettings?: AdminConfigInputWorkflowSettings;
 }

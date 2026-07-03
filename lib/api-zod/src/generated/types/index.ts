@@ -8,6 +8,8 @@
 
 export * from './adminConfig';
 export * from './adminConfigInput';
+export * from './adminConfigInputWorkflowSettings';
+export * from './adminConfigWorkflowSettings';
 export * from './adminSize';
 export * from './adminUnlockInput';
 export * from './adminUnlockResponse';

@@ -5,11 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminConfigWorkflowSettings } from './adminConfigWorkflowSettings';
 import type { AdminSize } from './adminSize';
 
 export interface AdminConfig {
   /** True when a config row exists in the database; false on first run */
   configured: boolean;
   sizes: AdminSize[];
-  workflowSettings: Record<string, any>;
+  workflowSettings?: AdminConfigWorkflowSettings;
 }

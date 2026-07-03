@@ -34,16 +34,20 @@ export interface AdminSize {
   colors: ColorOption[];
 }
 
+export type AdminConfigWorkflowSettings = { [key: string]: unknown };
+
 export interface AdminConfig {
   /** True when a config row exists in the database; false on first run */
   configured: boolean;
   sizes: AdminSize[];
-  workflowSettings: Record<string, any>;
+  workflowSettings?: AdminConfigWorkflowSettings;
 }
+
+export type AdminConfigInputWorkflowSettings = { [key: string]: unknown };
 
 export interface AdminConfigInput {
   sizes: AdminSize[];
-  workflowSettings: Record<string, any>;
+  workflowSettings?: AdminConfigInputWorkflowSettings;
 }
 
 export interface AdminUnlockInput {

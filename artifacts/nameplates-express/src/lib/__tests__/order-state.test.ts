@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { allowedTransitions, isTransitionAllowed } from "../../../../api-server/src/routes/orders";
+import { allowedTransitions, isTransitionAllowed } from "../../../../api-server/src/lib/order-state";
 
 describe("order state transitions", () => {
   it("allows the required n8n-controlled progression", () => {

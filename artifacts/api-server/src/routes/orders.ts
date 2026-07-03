@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, adminConfigTable, orderDeliveryAttemptTable, orderTable } from "@workspace/db";
 import { buildFinalOrderPayload, checksumPayload, makeOrderId } from "../lib/orders";
+import { getNextAttemptNumber, isTransitionAllowed } from "../lib/order-state";
 import { requireAdminAccess } from "../lib/admin-auth";
 
 const router: IRouter = Router();
@@ -87,28 +88,6 @@ function renderProofSvg(orderId: string, payload: Record<string, unknown>) {
   <text x="48" y="448" font-size="24" fill="#0f172a" font-family="Arial, Helvetica, sans-serif">Line items</text>
   ${itemRows}
 </svg>`;
-}
-
-export const allowedTransitions: Record<string, string[]> = {
-  draft: ["submitted", "invoiced"],
-  submitted: ["approved", "paid", "ready", "shipped", "delivered", "n8n_confirmed"],
-  approved: ["paid", "ready", "shipped", "delivered"],
-  paid: ["ready", "shipped", "delivered"],
-  ready: ["shipped", "delivered"],
-  shipped: ["delivered"],
-  invoiced: ["submitted", "paid"],
-  queued_for_n8n: ["n8n_sent", "n8n_failed", "n8n_confirmed"],
-  n8n_sent: ["n8n_confirmed", "n8n_failed"],
-  n8n_confirmed: ["approved", "paid", "ready", "shipped", "delivered"],
-  n8n_failed: ["queued_for_n8n"],
-};
-
-export function isTransitionAllowed(from: string, to: string) {
-  return (allowedTransitions[from] ?? []).includes(to);
-}
-
-export function getNextAttemptNumber(previousAttemptNumber?: number | null) {
-  return (previousAttemptNumber ?? 0) + 1;
 }
 
 async function getLatestAttempt(orderId: string) {

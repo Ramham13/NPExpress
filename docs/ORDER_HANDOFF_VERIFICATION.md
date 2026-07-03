@@ -140,4 +140,3 @@ Expected:
 - Server-side PayPal payment verification is still outstanding.
 - The proof endpoint still returns a summary SVG rather than a production proof package.
 - Full route-level integration coverage is still incomplete.
-- Local Windows Vitest reliability depends on the native Rollup package being present.
