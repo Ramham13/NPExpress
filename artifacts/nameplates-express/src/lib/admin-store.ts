@@ -54,8 +54,98 @@ export const PLATE_COLOR_STYLES: Record<string, {
   green:  { gA: "hsl(140,40%,18%)", gB: "hsl(140,35%,10%)", gC: "hsl(140,38%,15%)", sheen: "rgba(210,255,225,0.07)", border: "hsl(140,35%,30%)", border2: "rgba(190,255,210,0.04)" },
 };
 
-export function getPlateStyle(colorId: string) {
-  return PLATE_COLOR_STYLES[colorId] ?? PLATE_COLOR_STYLES.black;
+function normalizeHex(hex: string) {
+  const value = hex.trim();
+  if (/^#[0-9a-f]{6}$/i.test(value)) return value;
+  if (/^#[0-9a-f]{3}$/i.test(value)) {
+    return `#${value.slice(1).split("").map((ch) => `${ch}${ch}`).join("")}`;
+  }
+  return null;
+}
+
+function hexToRgb(hex: string) {
+  const normalized = normalizeHex(hex);
+  if (!normalized) return null;
+  return {
+    r: Number.parseInt(normalized.slice(1, 3), 16),
+    g: Number.parseInt(normalized.slice(3, 5), 16),
+    b: Number.parseInt(normalized.slice(5, 7), 16),
+  };
+}
+
+function rgbToHsl(r: number, g: number, b: number) {
+  const rr = r / 255;
+  const gg = g / 255;
+  const bb = b / 255;
+  const max = Math.max(rr, gg, bb);
+  const min = Math.min(rr, gg, bb);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+
+  if (delta === 0) {
+    return { h: 0, s: 0, l: lightness * 100 };
+  }
+
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let hue = 0;
+
+  switch (max) {
+    case rr:
+      hue = (gg - bb) / delta + (gg < bb ? 6 : 0);
+      break;
+    case gg:
+      hue = (bb - rr) / delta + 2;
+      break;
+    default:
+      hue = (rr - gg) / delta + 4;
+      break;
+  }
+
+  return {
+    h: Math.round(hue * 60),
+    s: Math.round(saturation * 100),
+    l: Math.round(lightness * 100),
+  };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function makeHsl(h: number, s: number, l: number) {
+  return `hsl(${Math.round(h)},${Math.round(s)}%,${Math.round(l)}%)`;
+}
+
+function makeCustomPlateStyle(colorHex: string) {
+  const rgb = hexToRgb(colorHex);
+  if (!rgb) return PLATE_COLOR_STYLES.black;
+
+  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  return {
+    gA: makeHsl(h, clamp(s, 18, 85), clamp(l + 10, 16, 42)),
+    gB: makeHsl(h, clamp(s, 18, 90), clamp(l - 12, 8, 24)),
+    gC: makeHsl(h, clamp(s, 18, 88), clamp(l + 3, 12, 32)),
+    sheen: "rgba(255,255,255,0.08)",
+    border: makeHsl(h, clamp(s - 12, 12, 70), clamp(l + 14, 26, 52)),
+    border2: "rgba(255,255,255,0.04)",
+  };
+}
+
+export function findColorOption(colorId: string | undefined, colors?: ColorOption[] | null) {
+  const id = colorId ?? "black";
+  return colors?.find((color) => color.id === id) ?? DEFAULT_COLOR_PALETTE.find((color) => color.id === id) ?? null;
+}
+
+export function getColorLabel(colorId: string | undefined, colors?: ColorOption[] | null) {
+  return findColorOption(colorId, colors)?.label ?? colorId ?? "black";
+}
+
+export function getColorHex(colorId: string | undefined, colors?: ColorOption[] | null) {
+  return findColorOption(colorId, colors)?.hex ?? DEFAULT_COLOR_PALETTE[0]?.hex ?? "#1a2035";
+}
+
+export function getPlateStyle(colorId: string, colorHex?: string) {
+  return PLATE_COLOR_STYLES[colorId] ?? (colorHex ? makeCustomPlateStyle(colorHex) : PLATE_COLOR_STYLES.black);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

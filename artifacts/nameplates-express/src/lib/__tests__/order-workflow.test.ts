@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { buildFinalOrderPayload, checksumPayload, makeOrderId } from "../../../../api-server/src/lib/orders";
+import { getNextAttemptNumber } from "../../../../api-server/src/routes/orders";
 
 describe("order workflow helpers", () => {
   it("builds a stable final order payload", () => {
@@ -27,5 +28,11 @@ describe("order workflow helpers", () => {
 
   it("generates an order id with the expected prefix", () => {
     expect(makeOrderId()).toMatch(/^NX-\d{4}-[A-F0-9]{6}$/);
+  });
+
+  it("increments delivery attempt numbers monotonically", () => {
+    expect(getNextAttemptNumber()).toBe(1);
+    expect(getNextAttemptNumber(1)).toBe(2);
+    expect(getNextAttemptNumber(4)).toBe(5);
   });
 });

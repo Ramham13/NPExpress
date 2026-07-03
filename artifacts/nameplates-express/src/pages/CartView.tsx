@@ -8,7 +8,7 @@ import { useAdmin } from "@/context/AdminContext";
 import {
   computeHZones, computeVZones, type CartItem,
 } from "@/lib/plate-utils";
-import { DEFAULT_COLOR_PALETTE } from "@/lib/admin-store";
+import { getColorHex, getColorLabel } from "@/lib/admin-store";
 
 interface Props {
   cart: CartItem[];
@@ -27,16 +27,6 @@ function textSummary(item: CartItem): string {
     .map((z) => item.lineConfigs[z.id]?.text)
     .filter(Boolean)
     .join(" · ") || "(no text)";
-}
-
-function colorLabel(colorId: string | undefined): string {
-  const id = colorId ?? "black";
-  return DEFAULT_COLOR_PALETTE.find(c => c.id === id)?.label ?? id;
-}
-
-function colorHex(colorId: string | undefined): string {
-  const id = colorId ?? "black";
-  return DEFAULT_COLOR_PALETTE.find(c => c.id === id)?.hex ?? "#1a2035";
 }
 
 export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckout, onQuote }: Props) {
@@ -218,6 +208,7 @@ function CartRow({ item, label, price, onRemove }: {
   const zones = item.direction === "horizontal"
     ? computeHZones(item.heights)
     : computeVZones(item.widths);
+  const sizeColors = (item.size as { colors?: { id: string; label: string; hex: string; enabled: boolean }[] }).colors;
 
   return (
     <div className="flex items-center gap-4 rounded-md border border-slate-700 bg-[hsl(220_20%_11%)] p-3">
@@ -231,6 +222,7 @@ function CartRow({ item, label, price, onRemove }: {
           dividers={item.dividers}
           direction={item.direction}
           colorId={item.color}
+          colorHex={getColorHex(item.color, sizeColors)}
         />
       </div>
 
@@ -245,8 +237,8 @@ function CartRow({ item, label, price, onRemove }: {
           {/* Color swatch */}
           <span className="flex items-center gap-1 text-xs text-slate-500">
             <span className="w-3 h-3 rounded-full border border-slate-600 inline-block"
-              style={{ backgroundColor: colorHex(item.color) }} />
-            {colorLabel(item.color)}
+              style={{ backgroundColor: getColorHex(item.color, sizeColors) }} />
+            {getColorLabel(item.color, sizeColors)}
           </span>
           {/* Price */}
           {price !== null && (

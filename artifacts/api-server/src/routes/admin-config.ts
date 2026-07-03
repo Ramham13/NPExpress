@@ -2,22 +2,35 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, adminConfigTable } from "@workspace/db";
 import { GetAdminConfigResponse, PutAdminConfigBody, PutAdminConfigResponse } from "@workspace/api-zod";
-import { verifyAdminToken } from "../lib/admin-token";
+import { getAdminTokenFromRequest, getAdminPassword, isAdminTokenValid, requireAdminAccess } from "../lib/admin-auth";
 
 const router: IRouter = Router();
 
-function getAdminPassword(): string {
-  return process.env.ADMIN_PASSWORD ?? "";
+function sanitizeWorkflowSettings(workflowSettings: unknown) {
+  const settings = workflowSettings as Record<string, unknown> | null | undefined;
+  return {
+    webhookEnabled: typeof settings?.webhookEnabled === "boolean" ? settings.webhookEnabled : false,
+  };
 }
 
 router.get("/admin/config", async (req, res) => {
   try {
     const rows = await db.select().from(adminConfigTable).limit(1);
     const row = rows[0];
+    const providedToken = getAdminTokenFromRequest(req);
+    const includeSecrets = providedToken == null
+      ? false
+      : isAdminTokenValid(providedToken, getAdminPassword());
+
+    if (providedToken != null && !includeSecrets) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const data = GetAdminConfigResponse.parse({
       configured: row != null,
       sizes: row?.sizes ?? [],
-      workflowSettings: row?.workflowSettings ?? {},
+      workflowSettings: includeSecrets ? row?.workflowSettings ?? {} : sanitizeWorkflowSettings(row?.workflowSettings),
     });
     res.json(data);
   } catch (err) {
@@ -27,15 +40,7 @@ router.get("/admin/config", async (req, res) => {
 });
 
 router.put("/admin/config", async (req, res) => {
-  const providedToken = req.headers["x-admin-key"];
-  const adminPassword = getAdminPassword();
-
-  if (
-    !adminPassword ||
-    typeof providedToken !== "string" ||
-    !verifyAdminToken(providedToken, adminPassword)
-  ) {
-    res.status(401).json({ error: "Unauthorized" });
+  if (!requireAdminAccess(req, res)) {
     return;
   }
 

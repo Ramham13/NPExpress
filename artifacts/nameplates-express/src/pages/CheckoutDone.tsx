@@ -5,6 +5,7 @@
 import { CheckCircle, ArrowRight, Package } from "lucide-react";
 import PlateFinalPreview from "@/components/PlateFinalPreview";
 import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
+import { getColorHex } from "@/lib/admin-store";
 import type { GuestInfo } from "./CheckoutGuest";
 
 interface Props {
@@ -32,8 +33,7 @@ export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffStat
             <p className="text-sm text-slate-400 max-w-md leading-relaxed">
               Thank you, <strong className="text-slate-200">{guestInfo.name}</strong>.
               A Nameplates Express team member will review your order and contact you at{" "}
-              <strong className="text-slate-200">{guestInfo.email}</strong> to confirm pricing and
-              send a PayPal payment request.
+              <strong className="text-slate-200">{guestInfo.email}</strong> if any proof or fulfillment follow-up is needed.
             </p>
             <p className="mt-3 text-xs text-slate-500">
               {handoffState === "sent" ? "The order has been handed off to fulfillment." : "Final handoff is processing."}
@@ -52,9 +52,9 @@ export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffStat
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">What Happens Next</h3>
             <ol className="space-y-3">
               {[
-                "Our team reviews your order and prepares a final invoice (within 1 business day).",
-                `We send a PayPal payment request to ${guestInfo.email}.`,
-                "Once payment is confirmed, your nameplates go into production (5–7 business days).",
+                "Our team reviews your paid order and validates the production details (within 1 business day).",
+                `We email ${guestInfo.email} if we need any proof or shipping clarification before production.`,
+                "Your nameplates move into production after review and payment confirmation are complete.",
                 shipTo ? `Your order ships to ${shipTo}.` : "Your order ships to your address on file.",
               ].map((step, i) => (
                 <li key={i} className="flex gap-3 text-sm text-slate-300">
@@ -78,13 +78,17 @@ export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffStat
                 const zones = item.direction === "horizontal"
                   ? computeHZones(item.heights)
                   : computeVZones(item.widths);
+                const sizeColors = (item.size as { colors?: { id: string; label: string; hex: string; enabled: boolean }[] }).colors;
                 return (
                   <div key={item.id} className="flex items-center gap-3">
                     <div className="w-28 shrink-0 rounded overflow-hidden bg-slate-900">
                       <PlateFinalPreview
                         uid={`done-${item.id}`} size={item.size} zones={zones}
                         lineConfigs={item.lineConfigs} dividers={item.dividers}
-                        direction={item.direction} />
+                        direction={item.direction}
+                        colorId={item.color}
+                        colorHex={getColorHex(item.color, sizeColors)}
+                      />
                     </div>
                     <div className="text-sm">
                       <p className="text-slate-500 text-xs">Item {idx + 1}</p>

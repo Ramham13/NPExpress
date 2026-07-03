@@ -49,24 +49,16 @@ export default function Designer() {
   const [confirmedCart,  setConfirmedCart]  = useState<CartItem[]>([]);
   const [handoffState,   setHandoffState]   = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
-  function makeOrderNumber() {
-    const year = new Date().getFullYear();
-    const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
-    return `NX-${year}-${rand}`;
-  }
-
   function startCheckout() { setAppView("checkout"); }
   function startQuote()    { setAppView("quote");    }
   function goToCart()      { setAppView("cart");     }
   function goToDesign()    { setSelectedSize(null); setAppView("design"); }
 
   async function finalizeOrder(paymentMethod: "paypal" | "invoice", paymentStatus: "paid" | "pending", cartSnapshot: CartItem[], infoSnapshot: GuestInfo) {
-    const orderId = makeOrderNumber();
     const response = await fetch("/api/orders/finalize", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        orderId,
         paymentMethod,
         paymentStatus,
         customer: infoSnapshot,
@@ -74,7 +66,11 @@ export default function Designer() {
       }),
     });
     if (!response.ok) throw new Error(`Order finalize failed: ${response.status}`);
-    return orderId;
+    const data = await response.json() as { orderId?: unknown };
+    if (typeof data.orderId !== "string" || !data.orderId) {
+      throw new Error("Order finalize response did not include an order id");
+    }
+    return data.orderId;
   }
 
   // ── Design state ────────────────────────────────────────────────────────
@@ -109,6 +105,7 @@ export default function Designer() {
   const adminSizeData = selectedSize ? sizes.find(s => s.id === selectedSize.id) : null;
   const availableColors = adminSizeData?.colors.filter(c => c.enabled) ?? [];
   const selectedColorLabel = availableColors.find(c => c.id === selectedColor)?.label ?? "Black";
+  const selectedColorHex = availableColors.find(c => c.id === selectedColor)?.hex;
 
   // ── Cart helpers ─────────────────────────────────────────────────────────
   function addSingleToCart() {
@@ -372,9 +369,9 @@ export default function Designer() {
     return (
       <QuoteDone
         guestInfo={guestInfo}
-        cart={cart}
+        cart={confirmedCart}
         handoffState={handoffState}
-        onNewOrder={() => { setGuestInfo(blankGuestInfo()); setCart([]); goToDesign(); }}
+        onNewOrder={() => { setGuestInfo(blankGuestInfo()); setConfirmedCart([]); setCart([]); goToDesign(); }}
       />
     );
   }
@@ -388,6 +385,7 @@ export default function Designer() {
         widths={widths}
         baseLineConfigs={lineConfigs}
         dividers={dividers}
+        colorId={selectedColor}
         onAccept={addBatchToCart}
         onBack={() => setAppView("design")}
       />
@@ -485,6 +483,7 @@ export default function Designer() {
               dividers={dividers}
               direction={direction}
               colorId={selectedColor}
+              colorHex={selectedColorHex}
             />
           </div>
         </div>

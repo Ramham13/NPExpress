@@ -1,7 +1,7 @@
 /**
- * Admin context — provides API-backed admin-managed sizes to the entire app.
- * Config is persisted in the database so it survives browser data clears and
- * works across devices. Wrap <App> with <AdminProvider>.
+ * Admin context provides API-backed admin-managed sizes to the entire app.
+ * Public pages only receive safe, non-secret config. Unlocked admin sessions
+ * can fetch and persist the full workflow settings.
  */
 import {
   createContext,
@@ -12,41 +12,51 @@ import {
   useRef,
 } from "react";
 import {
-  useGetAdminConfig,
+  getAdminConfig,
   putAdminConfig,
-  getGetAdminConfigQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { type AdminSize, loadAdminSizes, saveAdminSizes } from "@/lib/admin-store";
 
-// ─── Session key (written by AdminPage on successful unlock) ──────────────────
-
 export const ADMIN_KEY_SESSION_STORAGE = "nx_admin_key";
+export const ADMIN_AUTH_CHANGED_EVENT = "nx-admin-auth-changed";
+export const ADMIN_AUTH_EXPIRED_EVENT = "nx-admin-auth-expired";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Returns RequestInit with the admin key header if the user has unlocked the admin panel. */
 function adminRequestOptions(): RequestInit {
   const key = sessionStorage.getItem(ADMIN_KEY_SESSION_STORAGE) ?? "";
   return key ? { headers: { "x-admin-key": key } } : {};
 }
 
-/** Persist sizes and workflow settings to the API. Logs errors so they appear in the console. */
-function persistConfig(sizes: AdminSize[], workflowSettings: Record<string, unknown>): void {
-  void putAdminConfig({ sizes, workflowSettings }, adminRequestOptions()).catch((err: unknown) => {
-    console.error("[AdminContext] Failed to persist config to server:", err);
-  });
+function isUnauthorizedError(err: unknown) {
+  return typeof err === "object" && err !== null && "status" in err && (err as { status?: unknown }).status === 401;
 }
 
-// ─── Context shape ────────────────────────────────────────────────────────────
+function clearAdminSession() {
+  sessionStorage.removeItem(ADMIN_KEY_SESSION_STORAGE);
+  sessionStorage.removeItem("nx_admin_unlocked");
+}
+
+function emitBrowserEvent(name: string) {
+  window.dispatchEvent(new Event(name));
+}
+
+async function persistConfig(sizes: AdminSize[], workflowSettings: Record<string, unknown>): Promise<void> {
+  try {
+    await putAdminConfig({ sizes, workflowSettings }, adminRequestOptions());
+  } catch (err) {
+    if (isUnauthorizedError(err)) {
+      clearAdminSession();
+      emitBrowserEvent(ADMIN_AUTH_EXPIRED_EVENT);
+      return;
+    }
+
+    console.error("[AdminContext] Failed to persist config to server:", err);
+  }
+}
 
 interface AdminContextValue {
-  /** All sizes (active and inactive), in sort order. */
   sizes: AdminSize[];
-  /** Active sizes only, sorted by sortOrder. */
   activeSizes: AdminSize[];
   workflowSettings: Record<string, unknown>;
-  /** True while the initial config is being fetched from the server. */
   isLoading: boolean;
   addSize: (data: Omit<AdminSize, "id">) => void;
   updateSize: (id: string, patch: Partial<AdminSize>) => void;
@@ -56,51 +66,71 @@ interface AdminContextValue {
 
 const AdminContext = createContext<AdminContextValue | null>(null);
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
-
 export function AdminProvider({ children }: { children: React.ReactNode }) {
-  // Seed from localStorage for instant paint while the API response is in-flight
   const [sizes, setSizes] = useState<AdminSize[]>(loadAdminSizes);
   const [workflowSettings, setWorkflowSettings] = useState<Record<string, unknown>>({});
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Guards so effects only fire at the right time
   const initializedFromApi = useRef(false);
-  const skipNextSizesSave = useRef(false); // true when sizes are set from API (not by admin action)
-  const skipNextWorkflowSave = useRef(false); // true when workflow settings are set from API
+  const skipNextSizesSave = useRef(false);
+  const skipNextWorkflowSave = useRef(false);
   const isFirstRender = useRef(true);
 
-  const queryClient = useQueryClient();
-  const { data: apiConfig, isLoading, isError } = useGetAdminConfig();
+  const fetchConfig = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const apiConfig = await getAdminConfig(adminRequestOptions());
+      initializedFromApi.current = true;
 
-  // Once the API responds, adopt its data as the source of truth.
-  // Uses `configured` flag to distinguish "DB is empty" from "admin saved empty array".
-  // If the fetch errored, keep the local cache and do NOT overwrite.
-  useEffect(() => {
-    if (initializedFromApi.current) return;
-    if (isLoading) return;
-    if (isError) return;
-    if (!apiConfig) return;
+      if (apiConfig.configured) {
+        const serverSizes = apiConfig.sizes as AdminSize[];
+        skipNextSizesSave.current = true;
+        skipNextWorkflowSave.current = true;
+        setSizes(serverSizes);
+        setWorkflowSettings((apiConfig as { workflowSettings?: Record<string, unknown> }).workflowSettings ?? {});
+        saveAdminSizes(serverSizes);
+      }
+    } catch (err) {
+      if (isUnauthorizedError(err)) {
+        clearAdminSession();
+        setWorkflowSettings({});
+        emitBrowserEvent(ADMIN_AUTH_EXPIRED_EVENT);
 
-    initializedFromApi.current = true;
-
-    if (apiConfig.configured) {
-      // Row exists in DB — adopt whatever the server returned (even empty array)
-      const serverSizes = apiConfig.sizes as AdminSize[];
-      skipNextSizesSave.current = true;
-      skipNextWorkflowSave.current = true;
-      setSizes(serverSizes);
-      setWorkflowSettings((apiConfig as { workflowSettings?: Record<string, unknown> }).workflowSettings ?? {});
-      saveAdminSizes(serverSizes);
+        try {
+          const publicConfig = await getAdminConfig();
+          initializedFromApi.current = true;
+          if (publicConfig.configured) {
+            const serverSizes = publicConfig.sizes as AdminSize[];
+            skipNextSizesSave.current = true;
+            skipNextWorkflowSave.current = true;
+            setSizes(serverSizes);
+            setWorkflowSettings({});
+            saveAdminSizes(serverSizes);
+          }
+        } catch (fallbackErr) {
+          console.error("[AdminContext] Failed to reload public admin config:", fallbackErr);
+        }
+      } else {
+        console.error("[AdminContext] Failed to load admin config:", err);
+      }
+    } finally {
+      setIsLoading(false);
     }
-    // If !configured (no DB row yet), leave local default sizes in place.
-    // The DB will be populated on the first real admin save.
-  }, [apiConfig, isLoading, isError, queryClient]);
+  }, []);
 
-  // Persist to both localStorage (instant cache) and the API whenever sizes
-  // change due to an admin action. Skip:
-  //   • the very first render (localStorage seed)
-  //   • runs before the API has responded (initializedFromApi not set yet)
-  //   • runs triggered by adopting server data (skipNextSave flag)
+  useEffect(() => {
+    void fetchConfig();
+  }, [fetchConfig]);
+
+  useEffect(() => {
+    const handleAuthChanged = () => {
+      void fetchConfig();
+    };
+
+    window.addEventListener(ADMIN_AUTH_CHANGED_EVENT, handleAuthChanged);
+    return () => window.removeEventListener(ADMIN_AUTH_CHANGED_EVENT, handleAuthChanged);
+  }, [fetchConfig]);
+
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -111,8 +141,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       skipNextSizesSave.current = false;
       return;
     }
+
     saveAdminSizes(sizes);
-    persistConfig(sizes, workflowSettings);
+    void persistConfig(sizes, workflowSettings);
   }, [sizes]);
 
   useEffect(() => {
@@ -122,7 +153,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       skipNextWorkflowSave.current = false;
       return;
     }
-    persistConfig(sizes, workflowSettings);
+
+    void persistConfig(sizes, workflowSettings);
   }, [workflowSettings]);
 
   const addSize = useCallback((data: Omit<AdminSize, "id">) => {
@@ -131,11 +163,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateSize = useCallback((id: string, patch: Partial<AdminSize>) => {
-    setSizes((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    setSizes((prev) => prev.map((size) => (size.id === id ? { ...size, ...patch } : size)));
   }, []);
 
   const deleteSize = useCallback((id: string) => {
-    setSizes((prev) => prev.filter((s) => s.id !== id));
+    setSizes((prev) => prev.filter((size) => size.id !== id));
   }, []);
 
   const updateWorkflowSettings = useCallback((patch: Record<string, unknown>) => {
@@ -143,8 +175,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const activeSizes = [...sizes]
-    .filter((s) => s.active)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+    .filter((size) => size.active)
+    .sort((left, right) => left.sortOrder - right.sortOrder);
 
   return (
     <AdminContext.Provider
@@ -152,7 +184,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         sizes,
         activeSizes,
         workflowSettings,
-        isLoading: isLoading && !initializedFromApi.current,
+        isLoading,
         addSize,
         updateSize,
         deleteSize,
@@ -163,8 +195,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     </AdminContext.Provider>
   );
 }
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useAdmin(): AdminContextValue {
   const ctx = useContext(AdminContext);

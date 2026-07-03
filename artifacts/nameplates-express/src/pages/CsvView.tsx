@@ -16,6 +16,7 @@ import {
   defaultZoneConfig,
   type TagSize, type TextZone, type ZoneConfigs,
 } from "@/data/templates";
+import { getColorHex } from "@/lib/admin-store";
 
 interface CsvRow {
   rowNum: number;           // 1-based row number from the CSV file
@@ -33,6 +34,7 @@ interface Props {
   widths: number[];
   baseLineConfigs: ZoneConfigs;
   dividers: DividerConfig[];
+  colorId?: string;
   onAccept: (items: Omit<CartItem, "id" | "addedAt" | "batchId">[]) => void;
   onBack: () => void;
 }
@@ -99,7 +101,7 @@ function downloadCsvTemplate(zones: TextZone[]) {
   URL.revokeObjectURL(url);
 }
 
-export default function CsvView({ size, direction, heights, widths, baseLineConfigs, dividers, onAccept, onBack }: Props) {
+export default function CsvView({ size, direction, heights, widths, baseLineConfigs, dividers, colorId, onAccept, onBack }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows]       = useState<CsvRow[] | null>(null);
   const [fileName, setFileName] = useState("");
@@ -108,6 +110,7 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
   const zones: TextZone[] = direction === "horizontal"
     ? computeHZones(heights)
     : computeVZones(widths);
+  const sizeColors = (size as { colors?: { id: string; label: string; hex: string; enabled: boolean }[] }).colors;
 
   function processFile(file: File) {
     const reader = new FileReader();
@@ -154,6 +157,7 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
         size, direction, heights, widths,
         lineConfigs: r.lineConfigs,
         dividers,
+        color: colorId,
       }));
     onAccept(items);
   }
@@ -283,6 +287,8 @@ export default function CsvView({ size, direction, heights, widths, baseLineConf
                       lineConfigs={row.lineConfigs}
                       dividers={dividers}
                       direction={direction}
+                      colorId={colorId}
+                      colorHex={getColorHex(colorId, sizeColors)}
                     />
                   </div>
                   {/* Card footer */}

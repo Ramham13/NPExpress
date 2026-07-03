@@ -4,10 +4,15 @@
  */
 import { useState, useCallback, useEffect, createContext, useContext } from "react";
 import { postAdminUnlock } from "@workspace/api-client-react";
-import { useAdmin, ADMIN_KEY_SESSION_STORAGE } from "@/context/AdminContext";
+import {
+  useAdmin,
+  ADMIN_AUTH_CHANGED_EVENT,
+  ADMIN_AUTH_EXPIRED_EVENT,
+  ADMIN_KEY_SESSION_STORAGE,
+} from "@/context/AdminContext";
 import {
   type AdminSize, type ColorOption, type PricingTier,
-  DEFAULT_COLOR_PALETTE, ADMIN_DEFAULT_SIZES,
+  DEFAULT_COLOR_PALETTE,
 } from "@/lib/admin-store";
 import {
   Plus, Pencil, Trash2, Save, X, ChevronUp, ChevronDown,
@@ -20,6 +25,15 @@ const ADMIN_SESSION_KEY = "nx_admin_unlocked";
 
 const MAX_TIERS = 5;
 
+function adminRequestOptions(): RequestInit {
+  const token = sessionStorage.getItem(ADMIN_KEY_SESSION_STORAGE) ?? "";
+  return token ? { headers: { "x-admin-key": token } } : {};
+}
+
+function emitAdminAuthChanged() {
+  window.dispatchEvent(new Event(ADMIN_AUTH_CHANGED_EVENT));
+}
+
 // ─── AdminGate ────────────────────────────────────────────────────────────────
 
 function AdminGate({ children }: { children: React.ReactNode }) {
@@ -29,16 +43,33 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   const [input, setInput]   = useState("");
   const [error, setError]   = useState(false);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleExpired = () => {
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      sessionStorage.removeItem(ADMIN_KEY_SESSION_STORAGE);
+      setUnlocked(false);
+      setInput("");
+      setError(false);
+      setNotice("Your admin session expired. Unlock the page again to keep working.");
+    };
+
+    window.addEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleExpired);
+    return () => window.removeEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleExpired);
+  }, []);
 
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(false);
+    setNotice(null);
     try {
       const { token } = await postAdminUnlock({ password: input });
       sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
       sessionStorage.setItem(ADMIN_KEY_SESSION_STORAGE, token);
       setUnlocked(true);
+      emitAdminAuthChanged();
     } catch {
       setError(true);
       setInput("");
@@ -53,6 +84,8 @@ function AdminGate({ children }: { children: React.ReactNode }) {
     setUnlocked(false);
     setInput("");
     setError(false);
+    setNotice(null);
+    emitAdminAuthChanged();
   }
 
   if (!unlocked) {
@@ -81,6 +114,9 @@ function AdminGate({ children }: { children: React.ReactNode }) {
                 />
                 {error && (
                   <p className="mt-1.5 text-xs text-red-500">Incorrect password. Try again.</p>
+                )}
+                {notice && !error && (
+                  <p className="mt-1.5 text-xs text-amber-600">{notice}</p>
                 )}
               </div>
               <button
@@ -732,14 +768,47 @@ function AdminPageInner() {
 function RecentOrdersPanel() {
   const [orders, setOrders] = useState<Array<Record<string, unknown>>>([]);
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
   useEffect(() => {
-    void fetch("/api/orders").then(r => r.json()).then(data => setOrders(data.orders ?? [])).catch(() => setOrders([]));
+    let cancelled = false;
+
+    async function loadOrders() {
+      try {
+        setError(null);
+        const response = await fetch("/api/orders", adminRequestOptions());
+        if (response.status === 401) {
+          window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(`Failed to load orders (${response.status})`);
+        }
+        const data = await response.json();
+        if (!cancelled) {
+          setOrders(data.orders ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setOrders([]);
+          setError("Recent orders are unavailable right now.");
+        }
+      }
+    }
+
+    void loadOrders();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <h2 className="text-lg font-black text-slate-800">Recent Orders</h2>
       <div className="mt-3 space-y-2 max-h-80 overflow-auto">
-        {orders.length === 0 ? <p className="text-sm text-slate-500">No orders yet.</p> : orders.map((o) => (
+        {error ? <p className="text-sm text-amber-600">{error}</p> : null}
+        {!error && orders.length === 0 ? <p className="text-sm text-slate-500">No orders yet.</p> : orders.map((o) => (
           <button key={String(o.orderId ?? o.id)} type="button" onClick={() => setSelected(o)} className="w-full text-left rounded border border-slate-200 p-3 text-sm hover:border-blue-300">
             <div className="font-semibold text-slate-800">{String(o.orderId ?? o.id)}</div>
             <div className="text-slate-500">State: {String(o.state ?? "unknown")}</div>
@@ -751,11 +820,34 @@ function RecentOrdersPanel() {
           <div className="font-semibold text-slate-800">Selected order: {String(selected.orderId ?? selected.id)}</div>
           <div className="text-slate-500">State: {String(selected.state ?? "unknown")}</div>
           <div className="flex gap-2">
-            <button type="button" onClick={async () => {
-              const orderId = String(selected.orderId ?? selected.id);
-              await fetch(`/api/orders/${orderId}/retry`, { method: "POST" });
-            }} className="rounded bg-blue-600 px-3 py-1.5 text-white text-xs font-semibold">
-              Retry n8n
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                const orderId = String(selected.orderId ?? selected.id);
+                setBusy(true);
+                setError(null);
+                try {
+                  const response = await fetch(`/api/orders/${orderId}/retry`, {
+                    method: "POST",
+                    ...adminRequestOptions(),
+                  });
+                  if (response.status === 401) {
+                    window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
+                    return;
+                  }
+                  if (!response.ok) {
+                    throw new Error(`Retry failed (${response.status})`);
+                  }
+                } catch {
+                  setError("The n8n retry could not be started.");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className="rounded bg-blue-600 px-3 py-1.5 text-white text-xs font-semibold disabled:opacity-60"
+            >
+              {busy ? "Retrying..." : "Retry n8n"}
             </button>
             <button type="button" onClick={() => setSelected(null)} className="rounded border border-slate-300 px-3 py-1.5 text-slate-700 text-xs font-semibold">
               Close
