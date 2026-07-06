@@ -73,6 +73,14 @@ pnpm -C artifacts/api-server dev
 
 The local development path expects compatible Node.js and pnpm versions. If pnpm is not available globally, use Corepack or `npm exec pnpm@<version>` from a Node.js environment.
 
+Before starting the API outside Docker, set its required shell environment values. At minimum:
+
+- `PORT`
+- `DATABASE_URL`
+- `ADMIN_PASSWORD`
+
+Optional workflow values such as `N8N_ORDERS_WEBHOOK_URL`, `N8N_CALLBACK_SECRET`, `N8N_SHARED_SECRET`, `PAYPAL_SANDBOX_CLIENT_ID`, and `PAYPAL_SANDBOX_CLIENT_SECRET` can also be provided through the shell if you are not storing them through the admin page. The API `dev` script now sets `NODE_ENV=development` automatically on every platform, including Windows.
+
 Current workspace note:
 
 - The workspace now enforces Node.js `20.19+`, `22.12+`, or `24+` during install.
