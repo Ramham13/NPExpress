@@ -57,13 +57,12 @@ Do not document or commit local Gitea credentials.
 
 Before deploying beyond local testing:
 
-1. Resolve the blocking items in [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md).
-2. Replace local development credentials with deployment-specific secrets.
-3. Ensure admin secrets are masked or write-only in API responses.
-4. Require authorization for sensitive order APIs.
-5. Validate database backups and restore behavior.
-6. Confirm n8n webhook timeout, retry, idempotency, and callback behavior.
-7. Run automated tests from a clean install.
-8. Run a complete PayPal and quote-request workflow.
-9. Verify generated customer and intake emails in the target email environment.
-10. Capture the final deployment runbook once production hosting details are selected.
+1. Replace local development credentials with deployment-specific secrets and live infrastructure values.
+2. Upgrade the local non-Docker Node.js runtime if this machine will be used for direct shell builds instead of Docker-only validation.
+3. Validate database backups and restore behavior.
+4. Confirm n8n webhook timeout, retry, idempotency, and callback behavior against the real target workflow.
+5. Run automated tests from a clean install.
+6. Run a complete PayPal sandbox and quote-request workflow.
+7. Verify generated customer and intake emails in the target email environment.
+8. If moving beyond sandbox, switch to live PayPal credentials and perform a fresh live-payment verification pass.
+9. Capture the final deployment runbook once production hosting details are selected.
