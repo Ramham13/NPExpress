@@ -2,6 +2,7 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "packageManager": "pnpm@10.15.0",
   "scripts": {
     "preinstall": "node ./scripts/preinstall.cjs",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
@@ -9,6 +10,10 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
+  "engines": {
+    "node": ">=20.19.0 <21 || >=22.12.0 <23 || >=24.0.0",
+    "pnpm": ">=10.15.0"
+  },
   "optionalDependencies": {
     "@rollup/rollup-win32-x64-msvc": "4.62.2",
     "@tailwindcss/oxide-win32-x64-msvc": "4.3.1",

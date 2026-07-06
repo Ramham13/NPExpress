@@ -63,6 +63,8 @@ The Compose stack starts the web/API container and a PostgreSQL container. Datab
 Install workspace dependencies with pnpm, then run the workspace scripts from the repository root:
 
 ```powershell
+corepack enable
+corepack prepare pnpm@10.15.0 --activate
 pnpm install
 pnpm -C artifacts/nameplates-express dev
 pnpm -C artifacts/api-server dev
@@ -72,8 +74,8 @@ The local development path expects compatible Node.js and pnpm versions. If pnpm
 
 Current workspace note:
 
-- Vite 7.x reports Node.js `20.19+` or `22.12+` as the supported local baseline.
-- The repository now builds on this Windows host with Node `20.14.0`, but Vite still emits an unsupported-version warning during frontend builds.
+- The workspace now enforces Node.js `20.19+`, `22.12+`, or `24+` during install.
+- Docker already uses Node `24`, and `.nvmrc` pins the same local baseline for shell-based version managers.
 
 ## Runtime Routes
 
