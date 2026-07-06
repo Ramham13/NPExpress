@@ -770,30 +770,42 @@ function AdminPageInner() {
   );
 }
 
-function RecentOrdersPanel() {
+export function RecentOrdersPanel() {
   const [orders, setOrders] = useState<Array<Record<string, unknown>>>([]);
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadOrders = useCallback(async () => {
+    setError(null);
+    const response = await fetch("/api/orders", adminRequestOptions());
+    if (response.status === 401) {
+      window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to load orders (${response.status})`);
+    }
+
+    const data = await response.json();
+    const nextOrders = Array.isArray(data.orders) ? data.orders as Array<Record<string, unknown>> : [];
+    setOrders(nextOrders);
+    setSelected((current) => {
+      if (!current) {
+        return current;
+      }
+      const currentId = String(current.orderId ?? current.id ?? "");
+      return nextOrders.find((order) => String(order.orderId ?? order.id ?? "") === currentId) ?? null;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadOrders() {
+    async function loadInitialOrders() {
       try {
-        setError(null);
-        const response = await fetch("/api/orders", adminRequestOptions());
-        if (response.status === 401) {
-          window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
-          return;
-        }
-        if (!response.ok) {
-          throw new Error(`Failed to load orders (${response.status})`);
-        }
-        const data = await response.json();
-        if (!cancelled) {
-          setOrders(data.orders ?? []);
-        }
+        await loadOrders();
       } catch {
         if (!cancelled) {
           setOrders([]);
@@ -802,17 +814,18 @@ function RecentOrdersPanel() {
       }
     }
 
-    void loadOrders();
+    void loadInitialOrders();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadOrders]);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <h2 className="text-lg font-black text-slate-800">Recent Orders</h2>
       <div className="mt-3 space-y-2 max-h-80 overflow-auto">
         {error ? <p className="text-sm text-amber-600">{error}</p> : null}
+        {notice ? <p className="text-sm text-green-700">{notice}</p> : null}
         {!error && orders.length === 0 ? <p className="text-sm text-slate-500">No orders yet.</p> : orders.map((o) => (
           <button key={String(o.orderId ?? o.id)} type="button" onClick={() => setSelected(o)} className="w-full text-left rounded border border-slate-200 p-3 text-sm hover:border-blue-300">
             <div className="font-semibold text-slate-800">{String(o.orderId ?? o.id)}</div>
@@ -832,6 +845,7 @@ function RecentOrdersPanel() {
                 const orderId = String(selected.orderId ?? selected.id);
                 setBusy(true);
                 setError(null);
+                setNotice(null);
                 try {
                   const response = await fetch(`/api/orders/${orderId}/retry`, {
                     method: "POST",
@@ -844,6 +858,13 @@ function RecentOrdersPanel() {
                   if (!response.ok) {
                     throw new Error(`Retry failed (${response.status})`);
                   }
+                  const data = await response.json();
+                  await loadOrders();
+                  setNotice(
+                    data.duplicate
+                      ? `Order ${orderId} was already confirmed; no retry was needed.`
+                      : `Retry attempt ${String(data.attemptNumber ?? "?")} started for ${orderId}.`,
+                  );
                 } catch {
                   setError("The n8n retry could not be started.");
                 } finally {
