@@ -596,6 +596,50 @@ describe("order workflow routes", () => {
     expect(response.body.error).toContain("Transition from n8n_confirmed to draft is not allowed");
   });
 
+  it("keeps admin-only order management endpoints locked without an admin token", async () => {
+    seedWorkflowSettings();
+    vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
+
+    const finalizeResponse = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "invoice",
+        paymentStatus: "pending",
+        customer: { name: "Jane Smith", email: "jane@example.com" },
+        cart: [{ id: "plate-1", size: { label: '6" x 2"' } }],
+      });
+
+    const orderId = finalizeResponse.body.orderId as string;
+
+    const listResponse = await request(app).get("/api/orders");
+    expect(listResponse.status).toBe(401);
+    expect(listResponse.body).toEqual({ error: "Unauthorized" });
+
+    const detailResponse = await request(app).get(`/api/orders/${orderId}`);
+    expect(detailResponse.status).toBe(401);
+    expect(detailResponse.body).toEqual({ error: "Unauthorized" });
+
+    const proofHtmlResponse = await request(app).get(`/api/orders/${orderId}/proof.html`);
+    expect(proofHtmlResponse.status).toBe(401);
+    expect(proofHtmlResponse.body).toEqual({ error: "Unauthorized" });
+
+    const proofPackageResponse = await request(app).get(`/api/orders/${orderId}/proof-package.json`);
+    expect(proofPackageResponse.status).toBe(401);
+    expect(proofPackageResponse.body).toEqual({ error: "Unauthorized" });
+
+    const statusResponse = await request(app)
+      .post(`/api/orders/${orderId}/status`)
+      .send({ state: "approved" });
+    expect(statusResponse.status).toBe(401);
+    expect(statusResponse.body).toEqual({ error: "Unauthorized" });
+
+    const retryResponse = await request(app)
+      .post(`/api/orders/${orderId}/retry`)
+      .send({});
+    expect(retryResponse.status).toBe(401);
+    expect(retryResponse.body).toEqual({ error: "Unauthorized" });
+  });
+
   it("serves a printable proof document and structured proof package for persisted orders", async () => {
     seedWorkflowSettings();
     vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
