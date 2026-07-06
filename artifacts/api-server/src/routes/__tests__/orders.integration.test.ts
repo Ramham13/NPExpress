@@ -1,4 +1,5 @@
 import request from "supertest";
+import crypto from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import app from "../../app";
 import { ADMIN_HEADER_NAME } from "../../lib/admin-auth";
@@ -32,7 +33,8 @@ function seedWorkflowSettings() {
     workflowSettings: {
       webhookEnabled: true,
       n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
-      n8nCallbackSecret: "shared-secret",
+      n8nCallbackSecret: "callback-secret",
+      n8nSharedSecret: "delivery-secret",
       sandboxPayPalClientId: "paypal-client-id",
       sandboxPayPalSecret: "paypal-secret",
     },
@@ -73,6 +75,9 @@ describe("order workflow routes", () => {
       state: "n8n_sent",
       paymentMethod: "invoice",
     });
+    expect(order.n8nDeliveryToken).toBe(
+      crypto.createHmac("sha256", "delivery-secret").update(response.body.orderId).digest("hex"),
+    );
     expect(order.payload.orderState).toBe("invoiced");
     expect(order.payload.pricing).toMatchObject({
       currencyCode: "USD",
@@ -91,6 +96,41 @@ describe("order workflow routes", () => {
       requestChecksum: order.payloadChecksum,
     });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the callback secret for legacy admin configs without a shared secret", async () => {
+    seedAdminConfig({
+      sizes: [
+        {
+          id: "6x2",
+          label: '6" x 2"',
+          basePrice: 5.5,
+          pricingTiers: [{ minQty: 10, priceEach: 4.95 }],
+        },
+      ],
+      workflowSettings: {
+        webhookEnabled: true,
+        n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
+        n8nCallbackSecret: "legacy-callback-secret",
+        sandboxPayPalClientId: "paypal-client-id",
+        sandboxPayPalSecret: "paypal-secret",
+      },
+    });
+    vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
+
+    const response = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "invoice",
+        paymentStatus: "pending",
+        customer: { name: "Jane Smith", email: "jane@example.com" },
+        cart: [{ id: "plate-1", size: { label: '6" x 2"' } }],
+      });
+
+    expect(response.status).toBe(202);
+    expect(getTableRows(orderTable)[0]?.n8nDeliveryToken).toBe(
+      crypto.createHmac("sha256", "legacy-callback-secret").update(response.body.orderId).digest("hex"),
+    );
   });
 
   it("creates and captures PayPal orders before finalizing them as paid", async () => {

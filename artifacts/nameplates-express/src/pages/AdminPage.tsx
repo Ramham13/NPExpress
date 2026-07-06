@@ -303,6 +303,7 @@ function AdminPageInner() {
   const [workflowForm, setWorkflowForm] = useState({
     n8nOrdersWebhookUrl: String(workflowSettings.n8nOrdersWebhookUrl ?? ""),
     n8nCallbackSecret: String(workflowSettings.n8nCallbackSecret ?? ""),
+    n8nSharedSecret: String(workflowSettings.n8nSharedSecret ?? ""),
     webhookEnabled: Boolean(workflowSettings.webhookEnabled ?? false),
     sandboxPayPalClientId: String(workflowSettings.sandboxPayPalClientId ?? ""),
     sandboxPayPalSecret: String(workflowSettings.sandboxPayPalSecret ?? ""),
@@ -312,6 +313,7 @@ function AdminPageInner() {
     setWorkflowForm({
       n8nOrdersWebhookUrl: String(workflowSettings.n8nOrdersWebhookUrl ?? ""),
       n8nCallbackSecret: String(workflowSettings.n8nCallbackSecret ?? ""),
+      n8nSharedSecret: String(workflowSettings.n8nSharedSecret ?? ""),
       webhookEnabled: Boolean(workflowSettings.webhookEnabled ?? false),
       sandboxPayPalClientId: String(workflowSettings.sandboxPayPalClientId ?? ""),
       sandboxPayPalSecret: String(workflowSettings.sandboxPayPalSecret ?? ""),
@@ -669,7 +671,10 @@ function AdminPageInner() {
                 <input className={INP} value={workflowForm.n8nOrdersWebhookUrl} onChange={e => setWorkflowForm(p => ({ ...p, n8nOrdersWebhookUrl: e.target.value }))} />
               </Field>
               <Field label="n8n Callback Secret">
-                <input className={INP} value={workflowForm.n8nCallbackSecret} onChange={e => setWorkflowForm(p => ({ ...p, n8nCallbackSecret: e.target.value }))} />
+                <input type="password" autoComplete="new-password" className={INP} value={workflowForm.n8nCallbackSecret} onChange={e => setWorkflowForm(p => ({ ...p, n8nCallbackSecret: e.target.value }))} />
+              </Field>
+              <Field label="n8n Shared Secret">
+                <input type="password" autoComplete="new-password" className={INP} value={workflowForm.n8nSharedSecret} onChange={e => setWorkflowForm(p => ({ ...p, n8nSharedSecret: e.target.value }))} />
               </Field>
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={workflowForm.webhookEnabled} onChange={e => setWorkflowForm(p => ({ ...p, webhookEnabled: e.target.checked }))} />
@@ -679,7 +684,7 @@ function AdminPageInner() {
                 <input className={INP} value={workflowForm.sandboxPayPalClientId} onChange={e => setWorkflowForm(p => ({ ...p, sandboxPayPalClientId: e.target.value }))} />
               </Field>
               <Field label="Sandbox PayPal Secret">
-                <input className={INP} value={workflowForm.sandboxPayPalSecret} onChange={e => setWorkflowForm(p => ({ ...p, sandboxPayPalSecret: e.target.value }))} />
+                <input type="password" autoComplete="new-password" className={INP} value={workflowForm.sandboxPayPalSecret} onChange={e => setWorkflowForm(p => ({ ...p, sandboxPayPalSecret: e.target.value }))} />
               </Field>
               <button type="button" onClick={saveWorkflowSettings} className="rounded bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm font-bold text-white">
                 Save Workflow Settings

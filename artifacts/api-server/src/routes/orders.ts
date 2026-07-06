@@ -59,9 +59,10 @@ function isWebhookEnabled(settings: WorkflowSettings) {
 }
 
 function getSharedSecret(settings: WorkflowSettings) {
-  const configured = typeof settings.n8nCallbackSecret === "string" ? settings.n8nCallbackSecret.trim() : "";
+  const configured = typeof settings.n8nSharedSecret === "string" ? settings.n8nSharedSecret.trim() : "";
   const envSecret = typeof process.env.N8N_SHARED_SECRET === "string" ? process.env.N8N_SHARED_SECRET.trim() : "";
-  return configured || envSecret;
+  const legacyFallback = typeof settings.n8nCallbackSecret === "string" ? settings.n8nCallbackSecret.trim() : "";
+  return configured || envSecret || legacyFallback;
 }
 
 function getCallbackSecret(settings: WorkflowSettings) {

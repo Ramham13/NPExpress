@@ -23,6 +23,13 @@ PAYPAL_SANDBOX_CLIENT_SECRET=
 
 The admin page values are persisted in PostgreSQL and are the preferred test path. Environment values should be treated as fallback defaults. Public callers only receive safe workflow settings such as `webhookEnabled` and the PayPal sandbox client ID.
 
+Use separate secrets for the two webhook directions when possible:
+
+- `n8nSharedSecret` / `N8N_SHARED_SECRET`: used by the website to generate the outbound order delivery token.
+- `n8nCallbackSecret` / `N8N_CALLBACK_SECRET`: accepted by the website when n8n sends its confirmation callback.
+
+For older saved configs that only have `n8nCallbackSecret`, the website still falls back to that value for outbound token generation until the dedicated shared secret is populated.
+
 ## Outbound Website to n8n Handoff
 
 When an order is finalized, the API:

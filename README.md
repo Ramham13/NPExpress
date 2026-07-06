@@ -145,7 +145,8 @@ The admin page manages:
 - available plate colors
 - PayPal sandbox client ID and secret
 - n8n webhook URL
-- n8n callback/shared secrets
+- n8n callback secret
+- n8n shared secret used for outbound delivery-token signing
 
 The admin page no longer exposes a reset-to-defaults button because long-term deployments should treat product configuration as persistent data, not disposable seed state.
 
