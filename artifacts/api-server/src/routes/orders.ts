@@ -754,7 +754,7 @@ router.post("/orders/:orderId/retry", async (req, res) => {
     res.status(404).json({ error: "Order not found" });
     return;
   }
-  if (order.state === "n8n_confirmed") {
+  if (order.state === "n8n_confirmed" || order.n8nAckReceivedAt) {
     res.json({ ok: true, orderId, state: order.state, duplicate: true });
     return;
   }

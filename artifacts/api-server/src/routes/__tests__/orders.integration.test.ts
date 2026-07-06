@@ -408,6 +408,50 @@ describe("order workflow routes", () => {
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
   });
 
+  it("blocks retries after n8n confirmation even when the order has advanced to a later operational state", async () => {
+    seedWorkflowSettings();
+    vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
+
+    const finalizeResponse = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "invoice",
+        paymentStatus: "pending",
+        customer: { name: "Jane Smith", email: "jane@example.com" },
+        cart: [{ id: "plate-1", size: { label: '6" x 2"' } }],
+      });
+
+    const [orderBeforeAck] = getTableRows(orderTable);
+    await request(app)
+      .post("/api/webhooks/n8n/order-confirmation")
+      .send({
+        orderId: finalizeResponse.body.orderId,
+        token: orderBeforeAck?.n8nDeliveryToken,
+      })
+      .expect(200);
+
+    await request(app)
+      .post(`/api/orders/${finalizeResponse.body.orderId}/status`)
+      .set(adminHeaders())
+      .send({ state: "approved" })
+      .expect(200);
+
+    const retryResponse = await request(app)
+      .post(`/api/orders/${finalizeResponse.body.orderId}/retry`)
+      .set(adminHeaders())
+      .send({});
+
+    expect(retryResponse.status).toBe(200);
+    expect(retryResponse.body).toEqual({
+      ok: true,
+      orderId: finalizeResponse.body.orderId,
+      state: "approved",
+      duplicate: true,
+    });
+    expect(getTableRows(orderDeliveryAttemptTable)).toHaveLength(1);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps failed orders retryable and records each retry attempt", async () => {
     seedWorkflowSettings();
     vi.mocked(fetch)
