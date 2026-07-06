@@ -19,6 +19,26 @@ describe("admin config routes", () => {
     process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
   });
 
+  it("rejects invalid unlock requests and returns a token for the configured password only", async () => {
+    const badBodyResponse = await request(app)
+      .post("/api/admin/unlock")
+      .send({});
+    expect(badBodyResponse.status).toBe(400);
+    expect(badBodyResponse.body).toEqual({ error: "Invalid request body" });
+
+    const wrongPasswordResponse = await request(app)
+      .post("/api/admin/unlock")
+      .send({ password: "wrong-password" });
+    expect(wrongPasswordResponse.status).toBe(401);
+    expect(wrongPasswordResponse.body).toEqual({ error: "Invalid password" });
+
+    const successResponse = await request(app)
+      .post("/api/admin/unlock")
+      .send({ password: ADMIN_PASSWORD });
+    expect(successResponse.status).toBe(200);
+    expect(successResponse.body.token).toEqual(expect.any(String));
+  });
+
   it("persists workflow settings and hides secrets from public callers", async () => {
     const saveResponse = await request(app)
       .put("/api/admin/config")
@@ -87,5 +107,34 @@ describe("admin config routes", () => {
       sandboxPayPalClientId: "paypal-client-id",
       sandboxPayPalSecret: "paypal-secret",
     });
+  });
+
+  it("keeps admin config writes protected and rejects bad admin tokens on authenticated reads", async () => {
+    const protectedWriteResponse = await request(app)
+      .put("/api/admin/config")
+      .send({
+        sizes: [],
+        workflowSettings: {},
+      });
+    expect(protectedWriteResponse.status).toBe(401);
+    expect(protectedWriteResponse.body).toEqual({ error: "Unauthorized" });
+
+    await request(app)
+      .put("/api/admin/config")
+      .set(adminHeaders())
+      .send({
+        sizes: [],
+        workflowSettings: {
+          webhookEnabled: true,
+          sandboxPayPalClientId: "paypal-client-id",
+        },
+      })
+      .expect(200);
+
+    const badTokenResponse = await request(app)
+      .get("/api/admin/config")
+      .set(ADMIN_HEADER_NAME, "not-a-valid-token");
+    expect(badTokenResponse.status).toBe(401);
+    expect(badTokenResponse.body).toEqual({ error: "Unauthorized" });
   });
 });
