@@ -25,8 +25,8 @@ export default function Products() {
         <span className="inline-block h-2 w-2 rounded-full bg-primary flex-shrink-0" />
         <span>
           <strong className="text-foreground">Material:</strong> Anodized Aluminum &bull;
-          <strong className="text-foreground ml-2">Color:</strong> Black (only color available at this time) &bull;
-          <strong className="text-foreground ml-2">Payment:</strong> Quote request — PayPal checkout coming soon
+          <strong className="text-foreground ml-2">Color:</strong> Color availability follows the current catalog configuration &bull;
+          <strong className="text-foreground ml-2">Payment:</strong> Quote request or PayPal sandbox checkout during testing
         </span>
       </div>
 

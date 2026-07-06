@@ -89,8 +89,8 @@ export default function QuoteDone({ guestInfo, cart, handoffState, onNewOrder }:
                 "Our team reviews your quote request and nameplate designs (within 1 business day).",
                 `We send a formal quote or invoice to ${guestInfo.email} with pricing, shipping, and payment instructions.`,
                 guestInfo.poNumber
-                  ? "Once your PO is confirmed, your nameplates go into production (5–7 business days)."
-                  : "Upon payment confirmation, your nameplates go into production (5–7 business days).",
+                  ? "Once your PO is confirmed, your nameplates go into production (5-7 business days)."
+                  : "Upon payment confirmation, your nameplates go into production (5-7 business days).",
               ].map((step, i) => (
                 <li key={i} className="flex gap-3 text-sm text-slate-300">
                   <span className="font-mono font-bold text-blue-400 flex-shrink-0 w-5">0{i + 1}</span>

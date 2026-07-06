@@ -34,16 +34,13 @@ export default function Footer() {
             <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Ordering</h4>
             <ul className="space-y-2 text-sm">
               <li className="text-slate-400">
-                <span className="font-medium text-amber-400">PayPal checkout coming soon.</span>
+                <span className="font-medium text-amber-400">PayPal sandbox checkout is available for testing.</span>
               </li>
               <li className="text-slate-400">
                 Industrial customers may submit for PO/invoice handling.
               </li>
               <li className="text-slate-400">
                 Questions? <span className="text-white">info@nameplatesexpress.com</span>
-              </li>
-              <li className="text-slate-400">
-                <span className="text-white">1-800-555-PLATE</span>
               </li>
             </ul>
           </div>

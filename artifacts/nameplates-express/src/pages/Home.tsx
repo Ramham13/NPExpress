@@ -32,13 +32,13 @@ export default function Home() {
   const steps = [
     { num: "01", title: "Choose Template", desc: "Select from our catalog of standard anodized aluminum nameplate templates." },
     { num: "02", title: "Configure Options", desc: "Pick your size, confirm black anodized aluminum, set quantity. Logo-ready templates accept your logo upload." },
-    { num: "03", title: "Submit Quote Request", desc: "Review your cart and submit a request. We'll follow up within 1 business day. PayPal checkout coming soon." },
+    { num: "03", title: "Checkout or Request Invoice", desc: "Review your cart and either complete PayPal sandbox checkout or submit for invoice and PO follow-up within 1 business day." },
   ];
 
   const features = [
     { icon: <Shield size={18} />, label: "Industrial Grade", desc: "Type II anodized aluminum, durable for harsh environments." },
-    { icon: <Clock size={18} />, label: "Fast Turnaround", desc: "Standard production in 5–7 business days." },
-    { icon: <Layers size={18} />, label: "Predefined Sizes", desc: "Standard sizes ready to order — no custom sizing needed for most applications." },
+    { icon: <Clock size={18} />, label: "Fast Turnaround", desc: "Standard production in 5-7 business days." },
+    { icon: <Layers size={18} />, label: "Predefined Sizes", desc: "Standard sizes ready to order - no custom sizing needed for most applications." },
     { icon: <CheckCircle size={18} />, label: "Compliance Ready", desc: "Suitable for OSHA, NEC, and equipment labeling standards." },
   ];
 
@@ -57,7 +57,7 @@ export default function Home() {
               <span className="text-primary">Ready to Order.</span>
             </h1>
             <p className="mb-8 max-w-xl text-lg text-slate-300 leading-relaxed">
-              Professional anodized aluminum nameplates for equipment, panels, valves, and safety applications. Choose a template, configure, and submit your quote — no custom sizing complexity, just fast and precise.
+              Professional anodized aluminum nameplates for equipment, panels, valves, and safety applications. Choose a template, configure, and submit your quote - no custom sizing complexity, just fast and precise.
             </p>
             <div className="flex flex-wrap gap-4">
               <Link href="/products" data-testid="button-hero-browse">
@@ -132,7 +132,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Coming Soon — Custom Orders */}
+      {/* Coming Soon - Custom Orders */}
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
         <div className="mb-6">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Future Roadmap</p>
@@ -145,15 +145,15 @@ export default function Home() {
             </div>
             <div className="flex-1">
               <div className="mb-1 flex items-center gap-2">
-                <h3 className="text-base font-semibold text-foreground">Custom Orders — Coming Soon</h3>
+                <h3 className="text-base font-semibold text-foreground">Custom Orders - Coming Soon</h3>
                 <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Coming Soon
                 </span>
               </div>
               <p className="mb-4 text-sm text-muted-foreground leading-relaxed">
                 Upload DXF files for custom cut nameplate shapes and artwork. Choose material thickness and color.
-                Material: Anodized Aluminum only. Colors: Black (now) &bull; Red, Blue, Yellow, Green (coming soon).
-                Similar workflow to SendCutSend — upload your DXF, upload artwork, configure, and order.
+                Material: Anodized Aluminum only. Colors and availability should follow the current catalog configuration.
+                Similar workflow to SendCutSend - upload your DXF, upload artwork, configure, and order.
               </p>
               <button
                 data-testid="button-notify-me"
@@ -171,8 +171,8 @@ export default function Home() {
       <section className="border-t border-border bg-amber-50 dark:bg-amber-950/20">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <p className="text-center text-sm text-amber-800 dark:text-amber-400">
-            <strong>Payment info:</strong> Online payment via PayPal is coming soon after site testing is complete.
-            Industrial customers may submit orders for PO/invoice handling — our team will follow up with a formal quote.
+            <strong>Payment info:</strong> PayPal sandbox checkout is available during testing.
+            Industrial customers may still submit orders for PO/invoice handling, and our team will follow up with a formal quote.
           </p>
         </div>
       </section>

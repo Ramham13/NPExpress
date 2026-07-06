@@ -72,7 +72,7 @@ export default function Checkout() {
       <div className="flex items-start gap-3 rounded border border-amber-300 bg-amber-50 px-4 py-3 mb-8 dark:border-amber-700 dark:bg-amber-950/30">
         <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
         <p className="text-sm text-amber-800 dark:text-amber-300">
-          <strong>No payment required.</strong> This is a quote request only. PayPal checkout is coming soon.
+          <strong>No payment required.</strong> This is a quote request only. PayPal sandbox checkout is available during testing.
           Industrial accounts may select PO/invoice below.
         </p>
       </div>
@@ -176,9 +176,9 @@ export default function Checkout() {
                     className="mt-0.5 accent-primary"
                   />
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Pay via PayPal (when available)</p>
+                    <p className="text-sm font-semibold text-foreground">Pay via PayPal (sandbox testing)</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      PayPal checkout is coming soon. We will contact you when it is ready, or send an invoice.
+                      Use the current sandbox checkout for testing, or choose PO/invoice if your account requires terms-based follow-up.
                     </p>
                   </div>
                 </label>

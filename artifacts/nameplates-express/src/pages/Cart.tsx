@@ -46,7 +46,7 @@ export default function Cart() {
         <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
         <div className="text-sm text-amber-800 dark:text-amber-300">
           <strong>No payment is collected at this step.</strong> This is a quote request.
-          Online payment via PayPal is coming soon. Industrial customers may submit for PO/invoice handling — our team will follow up.
+          PayPal sandbox checkout is available during testing. Industrial customers may still submit for PO/invoice handling, and our team will follow up.
         </div>
       </div>
 
@@ -171,8 +171,8 @@ export default function Cart() {
             </button>
 
             <div className="mt-4 rounded bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground mb-1">Payment Options (Coming Soon)</p>
-              <p>PayPal checkout will be available after testing. Industrial customers: submit for PO/invoice handling.</p>
+              <p className="font-semibold text-foreground mb-1">Payment Options</p>
+              <p>PayPal sandbox checkout is available during testing. Industrial customers may still submit for PO/invoice handling.</p>
             </div>
           </div>
         </div>

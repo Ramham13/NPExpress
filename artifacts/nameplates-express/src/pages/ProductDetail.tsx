@@ -347,14 +347,14 @@ export default function ProductDetail() {
               >
                 {COLORS.map((c) => (
                   <option key={c.id} value={c.id} disabled={!c.available}>
-                    {c.label}{!c.available ? " — Coming Soon" : ""}
+                    {c.label}{!c.available ? " (not currently enabled)" : ""}
                   </option>
                 ))}
               </select>
               <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             </div>
             <p className="mt-1.5 text-xs text-muted-foreground">
-              Additional colors (Red, Blue, Yellow, Green) coming soon.
+              Additional color availability follows the current catalog configuration.
             </p>
           </div>
 

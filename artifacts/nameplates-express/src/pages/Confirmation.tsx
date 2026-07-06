@@ -56,7 +56,7 @@ export default function Confirmation() {
           <div>
             <p className="text-xs text-muted-foreground">Payment Preference</p>
             <p className="font-semibold text-foreground">
-              {isPO ? "PO / Invoice (Industrial Account)" : "PayPal (when available)"}
+              {isPO ? "PO / Invoice (Industrial Account)" : "PayPal (sandbox testing)"}
             </p>
           </div>
         </div>
@@ -82,12 +82,12 @@ export default function Confirmation() {
             <span>
               {isPO
                 ? "We send a formal quote with PO instructions and payment terms."
-                : "We confirm pricing and send an invoice or PayPal payment link."}
+                : "We confirm pricing and follow up with the current payment workflow or invoice details."}
             </span>
           </li>
           <li className="flex gap-3">
             <span className="font-mono font-bold text-primary flex-shrink-0">03</span>
-            <span>Upon payment confirmation, your nameplates go into production (5–7 business days).</span>
+            <span>Upon payment confirmation, your nameplates go into production (5-7 business days).</span>
           </li>
         </ol>
       </div>
@@ -95,8 +95,7 @@ export default function Confirmation() {
       {/* PayPal note */}
       <div className="mb-8 rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-700 dark:bg-amber-950/30">
         <p className="text-amber-800 dark:text-amber-300">
-          <strong>PayPal Checkout Coming Soon:</strong> We are adding PayPal as a checkout option after site testing is complete.
-          Future orders will be able to pay directly online for faster processing.
+          <strong>PayPal sandbox testing:</strong> the current testing workflow supports sandbox checkout, while invoice and PO follow-up remain available for terms-based orders.
         </p>
       </div>
 
@@ -107,7 +106,7 @@ export default function Confirmation() {
           </span>
         </Link>
         <p className="text-xs text-muted-foreground">
-          Questions? Contact us at <strong>info@nameplatesexpress.com</strong> or call <strong>1-800-555-PLATE</strong>
+          Questions? Contact us at <strong>info@nameplatesexpress.com</strong>
         </p>
       </div>
     </div>
