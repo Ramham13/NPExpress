@@ -187,36 +187,6 @@ function getProofPackage(orderId: string, payload: Record<string, unknown>) {
   };
 }
 
-function renderProofSvg(orderId: string, payload: Record<string, unknown>) {
-  const customer = (payload.customer ?? {}) as Record<string, unknown>;
-  const cart = getCartItems(payload);
-  const proofReferences = Array.isArray(payload.proofReferences) ? payload.proofReferences as { label?: unknown; url?: unknown }[] : [];
-  const lines = [
-    `Order ${orderId}`,
-    `State: ${payload.orderState ?? "unknown"}`,
-    `Customer: ${customer.name ?? customer.companyName ?? customer.email ?? "Unknown"}`,
-    `Items: ${cart.length}`,
-    `Proofs: ${proofReferences.length}`,
-  ];
-  const text = lines.map((line, index) => `<text x="48" y="${96 + index * 44}" font-size="28" fill="#10233d" font-family="Arial, Helvetica, sans-serif">${escapeXml(line)}</text>`).join("");
-  const itemRows = cart.slice(0, 6).map((item, index) => {
-    const lineItem = item as Record<string, unknown>;
-    const size = lineItem.size as Record<string, unknown> | undefined;
-    const label = lineItem.label ?? lineItem.name ?? size?.label ?? `Line item ${index + 1}`;
-    return `<text x="48" y="${360 + index * 34}" font-size="22" fill="#334155" font-family="Arial, Helvetica, sans-serif">${escapeXml(label)}</text>`;
-  }).join("");
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
-  <rect width="1200" height="1600" fill="#f8fafc"/>
-  <rect x="36" y="36" width="1128" height="1528" rx="28" fill="#ffffff" stroke="#cbd5e1"/>
-  <text x="48" y="64" font-size="22" fill="#64748b" font-family="Arial, Helvetica, sans-serif">Nameplates Express proof summary</text>
-  ${text}
-  <rect x="48" y="404" width="1104" height="1" fill="#e2e8f0"/>
-  <text x="48" y="448" font-size="24" fill="#0f172a" font-family="Arial, Helvetica, sans-serif">Line items</text>
-  ${itemRows}
-</svg>`;
-}
-
 function renderProofHtml(orderId: string, payload: Record<string, unknown>) {
   const proofPackage = getProofPackage(orderId, payload);
   const customer = proofPackage.customer;
@@ -706,20 +676,6 @@ router.get("/orders/:orderId", async (req, res) => {
   }
   const attempts = await db.select().from(orderDeliveryAttemptTable).where(eq(orderDeliveryAttemptTable.orderId, order.orderId)).orderBy(desc(orderDeliveryAttemptTable.createdAt));
   res.json({ order, attempts });
-});
-
-router.get("/orders/:orderId/proof.svg", async (req, res) => {
-  if (!requireAdminAccess(req, res)) {
-    return;
-  }
-
-  const rows = await db.select().from(orderTable).where(eq(orderTable.orderId, req.params.orderId)).limit(1);
-  const order = rows[0];
-  if (!order) {
-    res.status(404).type("text/plain").send("Order not found");
-    return;
-  }
-  res.type("image/svg+xml").send(renderProofSvg(order.orderId, order.payload as Record<string, unknown>));
 });
 
 router.get("/orders/:orderId/proof.html", async (req, res) => {

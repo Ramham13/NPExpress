@@ -10,7 +10,10 @@ describe("order workflow helpers", () => {
       paymentMethod: "paypal",
       customer: { name: "Jane Smith", email: "jane@example.com" },
       cart: [{ id: "1", size: "6x2" }],
-      proofReferences: [{ label: "Proof 1", url: "/api/orders/NX-2026-ABC123/proof.svg?item=1" }],
+      proofReferences: [
+        { label: "Printable proof document", url: "/api/orders/NX-2026-ABC123/proof.html" },
+        { label: "Proof data package", url: "/api/orders/NX-2026-ABC123/proof-package.json" },
+      ],
       paid: true,
       pricing: { currencyCode: "USD", subtotal: 5.5 },
       paymentMetadata: {
@@ -29,8 +32,11 @@ describe("order workflow helpers", () => {
     expect(payload.payment.status).toBe("paid");
     expect(payload.payment.paypalCaptureId).toBe("CAPTURE-123");
     expect(payload.pricing.subtotal).toBe(5.5);
-    expect(payload.proofReferences).toHaveLength(1);
-    expect(payload.proofReferences[0]?.url).toContain("/proof.svg");
+    expect(payload.proofReferences).toHaveLength(2);
+    expect(payload.proofReferences).toEqual([
+      { label: "Printable proof document", url: "/api/orders/NX-2026-ABC123/proof.html" },
+      { label: "Proof data package", url: "/api/orders/NX-2026-ABC123/proof-package.json" },
+    ]);
   });
 
   it("produces the same checksum for the same payload", () => {
