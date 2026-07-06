@@ -42,6 +42,8 @@ describe("admin config routes", () => {
           webhookEnabled: true,
           n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
           n8nCallbackSecret: "secret-value",
+          sandboxPayPalClientId: "paypal-client-id",
+          sandboxPayPalSecret: "paypal-secret",
         },
       });
 
@@ -51,6 +53,8 @@ describe("admin config routes", () => {
       webhookEnabled: true,
       n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
       n8nCallbackSecret: "secret-value",
+      sandboxPayPalClientId: "paypal-client-id",
+      sandboxPayPalSecret: "paypal-secret",
     });
 
     const publicResponse = await request(app).get("/api/admin/config");
@@ -60,10 +64,13 @@ describe("admin config routes", () => {
       sizes: expect.any(Array),
       workflowSettings: {
         webhookEnabled: true,
+        sandboxPayPalClientId: "paypal-client-id",
+        payPalEnvironment: "sandbox",
       },
     });
     expect(publicResponse.body.workflowSettings.n8nOrdersWebhookUrl).toBeUndefined();
     expect(publicResponse.body.workflowSettings.n8nCallbackSecret).toBeUndefined();
+    expect(publicResponse.body.workflowSettings.sandboxPayPalSecret).toBeUndefined();
 
     const authedResponse = await request(app)
       .get("/api/admin/config")
@@ -73,6 +80,8 @@ describe("admin config routes", () => {
       webhookEnabled: true,
       n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
       n8nCallbackSecret: "secret-value",
+      sandboxPayPalClientId: "paypal-client-id",
+      sandboxPayPalSecret: "paypal-secret",
     });
   });
 });

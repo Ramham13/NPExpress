@@ -18,9 +18,20 @@ export interface FinalOrderPayload {
   customer: Record<string, unknown>;
   cart: Array<Record<string, unknown>>;
   proofReferences: { label: string; url: string }[];
+  pricing: {
+    currencyCode: string;
+    subtotal: number;
+  };
   payment: {
     provider: "paypal" | "invoice";
     status: "paid" | "pending";
+    paypalOrderId?: string;
+    paypalCaptureId?: string;
+    payerId?: string | null;
+    payerEmail?: string | null;
+    currencyCode?: string | null;
+    amount?: string | null;
+    capturedAt?: string | null;
   };
   createdAt: string;
 }
@@ -40,6 +51,19 @@ export function buildFinalOrderPayload(args: {
   cart: Array<Record<string, unknown>>;
   proofReferences: { label: string; url: string }[];
   paid: boolean;
+  pricing: {
+    currencyCode: string;
+    subtotal: number;
+  };
+  paymentMetadata?: {
+    paypalOrderId: string;
+    paypalCaptureId: string;
+    payerId: string | null;
+    payerEmail: string | null;
+    currencyCode: string | null;
+    amount: string | null;
+    capturedAt: string | null;
+  };
 }): FinalOrderPayload {
   return {
     orderId: args.orderId,
@@ -48,9 +72,11 @@ export function buildFinalOrderPayload(args: {
     customer: args.customer,
     cart: args.cart,
     proofReferences: args.proofReferences,
+    pricing: args.pricing,
     payment: {
       provider: args.paymentMethod,
       status: args.paid ? "paid" : "pending",
+      ...args.paymentMetadata,
     },
     createdAt: new Date().toISOString(),
   };

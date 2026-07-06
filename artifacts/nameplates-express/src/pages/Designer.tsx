@@ -54,18 +54,31 @@ export default function Designer() {
   function goToCart()      { setAppView("cart");     }
   function goToDesign()    { setSelectedSize(null); setAppView("design"); }
 
-  async function finalizeOrder(paymentMethod: "paypal" | "invoice", paymentStatus: "paid" | "pending", cartSnapshot: CartItem[], infoSnapshot: GuestInfo) {
+  async function finalizeOrder(args: {
+    paymentMethod: "paypal" | "invoice";
+    paymentStatus?: "paid" | "pending";
+    cartSnapshot: CartItem[];
+    infoSnapshot: GuestInfo;
+    paypalOrderId?: string;
+    paypalCaptureId?: string;
+  }) {
     const response = await fetch("/api/orders/finalize", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        paymentMethod,
-        paymentStatus,
-        customer: infoSnapshot,
-        cart: cartSnapshot,
+        paymentMethod: args.paymentMethod,
+        paymentStatus: args.paymentStatus,
+        customer: args.infoSnapshot,
+        cart: args.cartSnapshot,
+        paypalOrderId: args.paypalOrderId,
+        paypalCaptureId: args.paypalCaptureId,
       }),
     });
-    if (!response.ok) throw new Error(`Order finalize failed: ${response.status}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({})) as { error?: unknown };
+      const message = typeof errorData.error === "string" ? errorData.error : `Order finalize failed: ${response.status}`;
+      throw new Error(message);
+    }
     const data = await response.json() as { orderId?: unknown };
     if (typeof data.orderId !== "string" || !data.orderId) {
       throw new Error("Order finalize response did not include an order id");
@@ -309,11 +322,17 @@ export default function Designer() {
         cart={cart}
         guestInfo={guestInfo}
         onBack={() => setAppView("checkout")}
-        onPaid={() => {
+        onPaid={({ paypalOrderId, paypalCaptureId }) => {
           const snapshot = [...cart];
           const infoSnapshot = { ...guestInfo };
           setHandoffState("sending");
-          void finalizeOrder("paypal", "paid", snapshot, infoSnapshot)
+          return finalizeOrder({
+            paymentMethod: "paypal",
+            cartSnapshot: snapshot,
+            infoSnapshot,
+            paypalOrderId,
+            paypalCaptureId,
+          })
             .then((num) => {
               setOrderNumber(num);
               setConfirmedCart(snapshot);
@@ -321,7 +340,10 @@ export default function Designer() {
               setHandoffState("sent");
               setAppView("order-confirmed");
             })
-            .catch(() => setHandoffState("failed"));
+            .catch((err) => {
+              setHandoffState("failed");
+              throw err;
+            });
         }}
       />
     );
@@ -351,7 +373,12 @@ export default function Designer() {
           const infoSnapshot = { ...info };
           setGuestInfo(infoSnapshot);
           setHandoffState("sending");
-          void finalizeOrder("invoice", "pending", snapshot, infoSnapshot)
+          void finalizeOrder({
+            paymentMethod: "invoice",
+            paymentStatus: "pending",
+            cartSnapshot: snapshot,
+            infoSnapshot,
+          })
             .then((num) => {
               setOrderNumber(num);
               setConfirmedCart(snapshot);

@@ -3,7 +3,16 @@ import { desc, eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, adminConfigTable, orderDeliveryAttemptTable, orderTable } from "@workspace/db";
 import { buildFinalOrderPayload, checksumPayload, makeOrderId } from "../lib/orders";
+import { buildCartPricing } from "../lib/order-pricing";
 import { getNextAttemptNumber, isTransitionAllowed } from "../lib/order-state";
+import {
+  capturePayPalOrder,
+  createPayPalOrder,
+  getPayPalConfig,
+  makePayPalRequestId,
+  verifyPayPalOrder,
+  type WorkflowSettings,
+} from "../lib/paypal";
 import { requireAdminAccess } from "../lib/admin-auth";
 
 const router: IRouter = Router();
@@ -18,11 +27,23 @@ function getN8nCallbackSecret() {
   return process.env.N8N_CALLBACK_SECRET ?? "";
 }
 
-type WorkflowSettings = Record<string, unknown>;
-
 async function getWorkflowSettings(): Promise<WorkflowSettings> {
   const rows = await db.select().from(adminConfigTable).limit(1);
   return (rows[0]?.workflowSettings ?? {}) as WorkflowSettings;
+}
+
+async function getConfiguredSizes() {
+  const rows = await db.select().from(adminConfigTable).limit(1);
+  return Array.isArray(rows[0]?.sizes) ? rows[0].sizes as Record<string, unknown>[] : [];
+}
+
+async function findOrderByPayPalCaptureId(captureId: string) {
+  const orders = await db.select().from(orderTable);
+  return orders.find((row) => {
+    const payload = row.payload as Record<string, unknown>;
+    const payment = (payload.payment ?? {}) as Record<string, unknown>;
+    return payment.paypalCaptureId === captureId;
+  });
 }
 
 function getConfiguredWebhookUrl(settings: WorkflowSettings) {
@@ -82,6 +103,7 @@ function getProofPackage(orderId: string, payload: Record<string, unknown>) {
   const cart = getCartItems(payload);
   const proofReferences = Array.isArray(payload.proofReferences) ? payload.proofReferences as Array<Record<string, unknown>> : [];
   const payment = (payload.payment ?? {}) as Record<string, unknown>;
+  const pricing = (payload.pricing ?? {}) as Record<string, unknown>;
 
   return {
     schemaVersion: "2026-07-proof-package-v1",
@@ -115,6 +137,15 @@ function getProofPackage(orderId: string, payload: Record<string, unknown>) {
       method: payload.paymentMethod ?? null,
       provider: payment.provider ?? null,
       status: payment.status ?? null,
+      paypalOrderId: payment.paypalOrderId ?? null,
+      paypalCaptureId: payment.paypalCaptureId ?? null,
+      payerId: payment.payerId ?? null,
+      payerEmail: payment.payerEmail ?? null,
+      capturedAt: payment.capturedAt ?? null,
+    },
+    pricing: {
+      currencyCode: pricing.currencyCode ?? null,
+      subtotal: pricing.subtotal ?? null,
     },
     proofAssets: proofReferences.map((reference, index) => ({
       itemNumber: index + 1,
@@ -254,6 +285,9 @@ function renderProofHtml(orderId: string, payload: Record<string, unknown>) {
         <div>Method: ${escapeXml(proofPackage.payment.method)}</div>
         <div>Provider: ${escapeXml(proofPackage.payment.provider)}</div>
         <div>Status: ${escapeXml(proofPackage.payment.status)}</div>
+        <div>PayPal Order: ${escapeXml(proofPackage.payment.paypalOrderId)}</div>
+        <div>Capture ID: ${escapeXml(proofPackage.payment.paypalCaptureId)}</div>
+        <div>Subtotal: ${escapeXml(proofPackage.pricing.currencyCode)} ${escapeXml(proofPackage.pricing.subtotal)}</div>
       </div>
     </section>
     <section class="card" style="margin-bottom: 24px;">
@@ -423,15 +457,125 @@ async function handleN8nOrderConfirmed(req: Request, res: Response) {
   res.json({ ok: true });
 }
 
+router.post("/paypal/orders", async (req, res) => {
+  try {
+    const body = req.body as {
+      cart?: Array<Record<string, unknown>>;
+    };
+    const workflowSettings = await getWorkflowSettings();
+    const payPalConfig = getPayPalConfig(workflowSettings);
+    if (!payPalConfig) {
+      res.status(409).json({ error: "PayPal sandbox credentials are not configured" });
+      return;
+    }
+
+    const cart = Array.isArray(body.cart) ? body.cart : [];
+    if (cart.length === 0) {
+      res.status(400).json({ error: "Cart is required" });
+      return;
+    }
+
+    const pricing = buildCartPricing(cart, await getConfiguredSizes());
+    if (pricing.subtotal <= 0) {
+      res.status(409).json({ error: "Unable to calculate a payable cart total" });
+      return;
+    }
+
+    const created = await createPayPalOrder({
+      config: payPalConfig,
+      amount: pricing.subtotal,
+      description: `Nameplates Express order (${cart.length} item${cart.length === 1 ? "" : "s"})`,
+      requestId: makePayPalRequestId("create", checksumPayload({ cart, subtotal: pricing.subtotal })),
+    });
+
+    res.json({
+      orderId: created.orderId,
+      status: created.status,
+      amount: pricing.subtotal.toFixed(2),
+      currencyCode: pricing.currencyCode,
+    });
+  } catch (err) {
+    req.log.error(err, "Failed to create PayPal order");
+    res.status(500).json({ error: "Failed to create PayPal order" });
+  }
+});
+
+router.post("/paypal/orders/:orderId/capture", async (req, res) => {
+  try {
+    const workflowSettings = await getWorkflowSettings();
+    const payPalConfig = getPayPalConfig(workflowSettings);
+    if (!payPalConfig) {
+      res.status(409).json({ error: "PayPal sandbox credentials are not configured" });
+      return;
+    }
+
+    const payment = await capturePayPalOrder({
+      config: payPalConfig,
+      orderId: req.params.orderId,
+      requestId: makePayPalRequestId("capture", req.params.orderId),
+    });
+
+    res.json(payment);
+  } catch (err) {
+    req.log.error(err, "Failed to capture PayPal order");
+    res.status(500).json({ error: "Failed to capture PayPal order" });
+  }
+});
+
 router.post("/orders/finalize", async (req, res) => {
   try {
     const body = req.body as {
       paymentMethod: "paypal" | "invoice";
-      paymentStatus: "paid" | "pending";
+      paymentStatus?: "paid" | "pending";
       customer: Record<string, unknown>;
       cart: Array<Record<string, unknown>>;
       proofReferences?: { label: string; url: string }[];
+      paypalOrderId?: string;
+      paypalCaptureId?: string;
     };
+    const workflowSettings = await getWorkflowSettings();
+    const pricing = buildCartPricing(body.cart, await getConfiguredSizes());
+    const isPayPalOrder = body.paymentMethod === "paypal";
+    const isPaid = isPayPalOrder ? true : body.paymentStatus === "paid";
+
+    let verifiedPayment: Awaited<ReturnType<typeof verifyPayPalOrder>> = null;
+    if (isPayPalOrder) {
+      if (!body.paypalOrderId || !body.paypalCaptureId) {
+        res.status(400).json({ error: "Missing PayPal order or capture id" });
+        return;
+      }
+
+      const existingOrder = await findOrderByPayPalCaptureId(body.paypalCaptureId);
+      if (existingOrder) {
+        res.status(200).json({
+          orderId: existingOrder.orderId,
+          state: existingOrder.state,
+          duplicate: true,
+        });
+        return;
+      }
+
+      const payPalConfig = getPayPalConfig(workflowSettings);
+      if (!payPalConfig) {
+        res.status(409).json({ error: "PayPal sandbox credentials are not configured" });
+        return;
+      }
+
+      verifiedPayment = await verifyPayPalOrder({
+        config: payPalConfig,
+        orderId: body.paypalOrderId,
+        captureId: body.paypalCaptureId,
+      });
+      if (!verifiedPayment) {
+        res.status(409).json({ error: "Unable to verify a completed PayPal capture for this order" });
+        return;
+      }
+      if (verifiedPayment.currencyCode !== pricing.currencyCode || Number(verifiedPayment.amount ?? "0") !== pricing.subtotal) {
+        res.status(409).json({ error: "Verified PayPal amount does not match the current order total" });
+        return;
+      }
+    }
+
     const orderId = makeOrderId();
     const payload = buildFinalOrderPayload({
       orderId,
@@ -439,10 +583,19 @@ router.post("/orders/finalize", async (req, res) => {
       customer: body.customer,
       cart: body.cart,
       proofReferences: body.proofReferences ?? buildProofReferences(orderId),
-      paid: body.paymentStatus === "paid",
+      paid: isPaid,
+      pricing,
+      paymentMetadata: verifiedPayment ? {
+        paypalOrderId: verifiedPayment.orderId,
+        paypalCaptureId: verifiedPayment.captureId,
+        payerId: verifiedPayment.payerId,
+        payerEmail: verifiedPayment.payerEmail,
+        currencyCode: verifiedPayment.currencyCode,
+        amount: verifiedPayment.amount,
+        capturedAt: verifiedPayment.capturedAt,
+      } : undefined,
     });
     const payloadChecksum = checksumPayload(payload);
-    const workflowSettings = await getWorkflowSettings();
     const sharedSecret = getSharedSecret(workflowSettings);
     const n8nDeliveryToken = sharedSecret ? getWebhookToken(orderId, sharedSecret) : "";
 

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, adminConfigTable } from "@workspace/db";
 import { GetAdminConfigResponse, PutAdminConfigBody, PutAdminConfigResponse } from "@workspace/api-zod";
 import { getAdminTokenFromRequest, getAdminPassword, isAdminTokenValid, requireAdminAccess } from "../lib/admin-auth";
+import { getPublicPayPalSettings } from "../lib/paypal";
 
 const router: IRouter = Router();
 
@@ -10,6 +11,7 @@ function sanitizeWorkflowSettings(workflowSettings: unknown) {
   const settings = workflowSettings as Record<string, unknown> | null | undefined;
   return {
     webhookEnabled: typeof settings?.webhookEnabled === "boolean" ? settings.webhookEnabled : false,
+    ...getPublicPayPalSettings(settings ?? {}),
   };
 }
 

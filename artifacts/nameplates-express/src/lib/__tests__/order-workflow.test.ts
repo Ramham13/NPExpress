@@ -12,11 +12,23 @@ describe("order workflow helpers", () => {
       cart: [{ id: "1", size: "6x2" }],
       proofReferences: [{ label: "Proof 1", url: "/api/orders/NX-2026-ABC123/proof.svg?item=1" }],
       paid: true,
+      pricing: { currencyCode: "USD", subtotal: 5.5 },
+      paymentMetadata: {
+        paypalOrderId: "PAYPAL-ORDER-1",
+        paypalCaptureId: "CAPTURE-123",
+        payerId: "PAYER-123",
+        payerEmail: "payer@example.com",
+        currencyCode: "USD",
+        amount: "5.50",
+        capturedAt: "2026-07-05T00:00:00Z",
+      },
     });
 
     expect(payload.orderId).toBe("NX-2026-ABC123");
     expect(payload.orderState).toBe("paid");
     expect(payload.payment.status).toBe("paid");
+    expect(payload.payment.paypalCaptureId).toBe("CAPTURE-123");
+    expect(payload.pricing.subtotal).toBe(5.5);
     expect(payload.proofReferences).toHaveLength(1);
     expect(payload.proofReferences[0]?.url).toContain("/proof.svg");
   });

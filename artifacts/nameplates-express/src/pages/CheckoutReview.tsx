@@ -1,22 +1,16 @@
-/**
- * Order review + PayPal payment step (PayPal checkout path).
- * Shows cart items with plate previews, shipping/billing summary, and a
- * PayPal button. In production this initiates the PayPal SDK flow; for now
- * it simulates a successful payment after a short delay.
- */
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, MapPin, User, ShoppingCart, AlertTriangle, Receipt } from "lucide-react";
 import PlateFinalPreview from "@/components/PlateFinalPreview";
 import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
 import { useAdmin } from "@/context/AdminContext";
-import { getColorHex, getColorLabel } from "@/lib/admin-store";
+import { getColorHex, getColorLabel, resolvePrice } from "@/lib/admin-store";
 import type { GuestInfo } from "./CheckoutGuest";
 
 interface Props {
   cart: CartItem[];
   guestInfo: GuestInfo;
   onBack: () => void;
-  onPaid: () => void;
+  onPaid: (payment: { paypalOrderId: string; paypalCaptureId: string }) => Promise<void>;
 }
 
 function cartTextSummary(item: CartItem): string {
@@ -34,23 +28,162 @@ function AddrLines({ lines }: { lines: (string | undefined)[] }) {
   );
 }
 
+function buildCartSummary(cart: CartItem[], sizes: ReturnType<typeof useAdmin>["sizes"]) {
+  const counts = new Map<string, number>();
+  for (const item of cart) {
+    counts.set(item.size.id, (counts.get(item.size.id) ?? 0) + 1);
+  }
+
+  const itemPrices = cart.map((item) => {
+    const size = sizes.find((entry) => entry.id === item.size.id);
+    const qty = counts.get(item.size.id) ?? 1;
+    const unitPrice = size ? resolvePrice(size, qty) : 0;
+    return {
+      itemId: item.id,
+      unitPrice,
+    };
+  });
+
+  const subtotal = itemPrices.reduce((sum, item) => sum + item.unitPrice, 0);
+  return {
+    itemPrices: new Map(itemPrices.map((item) => [item.itemId, item.unitPrice] as const)),
+    subtotal,
+  };
+}
+
+async function loadPayPalSdk(clientId: string) {
+  const existing = document.querySelector<HTMLScriptElement>('script[data-paypal-sdk="true"]');
+  const expectedSrc = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=USD&intent=capture`;
+
+  if (existing?.dataset.src === expectedSrc && window.paypal) {
+    return;
+  }
+
+  if (existing) {
+    existing.remove();
+    delete window.paypal;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = expectedSrc;
+    script.async = true;
+    script.dataset.paypalSdk = "true";
+    script.dataset.src = expectedSrc;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load the PayPal SDK"));
+    document.head.appendChild(script);
+  });
+}
+
 export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Props) {
   const [busy, setBusy] = useState(false);
-  const { sizes } = useAdmin();
+  const [error, setError] = useState<string | null>(null);
+  const [sdkReady, setSdkReady] = useState(false);
+  const { sizes, workflowSettings } = useAdmin();
+  const payPalClientId = String(workflowSettings.sandboxPayPalClientId ?? "").trim();
+  const paypalButtonRef = useRef<HTMLDivElement | null>(null);
 
-  const subtotal = cart.reduce((sum, item) => {
-    const size = sizes.find((entry) => entry.id === item.size.id);
-    return sum + (size?.basePrice ?? 0);
-  }, 0);
+  const pricing = useMemo(() => buildCartSummary(cart, sizes), [cart, sizes]);
   const anyPriced = cart.some((item) => sizes.find((entry) => entry.id === item.size.id));
 
-  function handlePayPal() {
-    setBusy(true);
-    setTimeout(() => {
-      setBusy(false);
-      onPaid();
-    }, 2000);
-  }
+  useEffect(() => {
+    let cancelled = false;
+
+    async function setupPayPal() {
+      if (!payPalClientId || !paypalButtonRef.current) {
+        setSdkReady(false);
+        return;
+      }
+
+      setError(null);
+      setSdkReady(false);
+
+      try {
+        await loadPayPalSdk(payPalClientId);
+        if (cancelled || !paypalButtonRef.current || !window.paypal) {
+          return;
+        }
+
+        paypalButtonRef.current.innerHTML = "";
+        await window.paypal.Buttons({
+          style: {
+            color: "gold",
+            shape: "rect",
+            layout: "vertical",
+            label: "paypal",
+          },
+          createOrder: async () => {
+            setBusy(true);
+            setError(null);
+
+            const response = await fetch("/api/paypal/orders", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ cart }),
+            });
+            const data = await response.json() as { orderId?: unknown; error?: unknown };
+            if (!response.ok || typeof data.orderId !== "string") {
+              throw new Error(typeof data.error === "string" ? data.error : "Unable to create the PayPal order");
+            }
+            return data.orderId;
+          },
+          onApprove: async (data) => {
+            try {
+              setBusy(true);
+              setError(null);
+
+              const response = await fetch(`/api/paypal/orders/${encodeURIComponent(data.orderID)}/capture`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+              });
+              const capture = await response.json() as {
+                orderId?: unknown;
+                captureId?: unknown;
+                error?: unknown;
+              };
+              if (!response.ok || typeof capture.orderId !== "string" || typeof capture.captureId !== "string") {
+                throw new Error(typeof capture.error === "string" ? capture.error : "Unable to capture the PayPal payment");
+              }
+
+              await onPaid({
+                paypalOrderId: capture.orderId,
+                paypalCaptureId: capture.captureId,
+              });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "PayPal capture failed");
+              setBusy(false);
+            }
+          },
+          onCancel: () => {
+            setBusy(false);
+            setError("PayPal checkout was canceled before payment was completed.");
+          },
+          onError: (err) => {
+            setBusy(false);
+            setError(err instanceof Error ? err.message : "PayPal checkout failed");
+          },
+        }).render(paypalButtonRef.current);
+
+        if (!cancelled) {
+          setSdkReady(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to initialize PayPal checkout");
+        }
+      } finally {
+        if (!cancelled) {
+          setBusy(false);
+        }
+      }
+    }
+
+    void setupPayPal();
+    return () => {
+      cancelled = true;
+    };
+  }, [cart, payPalClientId, onPaid]);
 
   const shippingLines = [
     guestInfo.name,
@@ -132,9 +265,8 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
               </div>
               <div className="space-y-2">
                 {cart.map((item, index) => {
-                  const size = sizes.find((entry) => entry.id === item.size.id);
-                  const price = size?.basePrice;
                   const sizeColors = (item.size as { colors?: { id: string; label: string; hex: string; enabled: boolean }[] }).colors;
+                  const price = pricing.itemPrices.get(item.id) ?? 0;
                   return (
                     <div key={item.id} className="flex items-center justify-between text-sm">
                       <span className="text-slate-400">
@@ -143,21 +275,19 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
                           <span className="ml-1 text-slate-500">· {getColorLabel(item.color, sizeColors)}</span>
                         )}
                       </span>
-                      <span className="font-medium text-slate-200">
-                        {price !== undefined ? `$${price.toFixed(2)}` : "-"}
-                      </span>
+                      <span className="font-medium text-slate-200">${price.toFixed(2)}</span>
                     </div>
                   );
                 })}
                 <div className="mt-2 flex items-center justify-between border-t border-slate-700 pt-2">
-                  <span className="text-sm font-semibold text-slate-300">Estimated Total</span>
-                  <span className="text-base font-bold text-slate-100">${subtotal.toFixed(2)}</span>
+                  <span className="text-sm font-semibold text-slate-300">Order Total</span>
+                  <span className="text-base font-bold text-slate-100">${pricing.subtotal.toFixed(2)}</span>
                 </div>
               </div>
               {cart.length >= 10 && (
-                <p className="mt-2 text-xs text-blue-400">Quantity discount may apply and is confirmed before any charge.</p>
+                <p className="mt-2 text-xs text-blue-400">Quantity pricing has been applied where configured for this size.</p>
               )}
-              <p className="mt-1 text-xs text-slate-500">Base pricing. Final amount is confirmed on invoice before payment.</p>
+              <p className="mt-1 text-xs text-slate-500">The PayPal checkout amount is generated from your current configured website pricing.</p>
             </section>
           )}
 
@@ -204,26 +334,38 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
 
             <p className="mb-4 text-sm leading-relaxed text-slate-300">
               Your order for <strong className="text-slate-200">{cart.length} nameplate{cart.length !== 1 ? "s" : ""}</strong>
-              {" "}will be sent to our team for review. We will confirm final pricing and send a PayPal payment
-              request to <strong className="text-slate-200">{guestInfo.email}</strong> before any charge is made.
+              {" "}will be captured immediately through PayPal and then handed to our operations workflow for review and fulfillment.
             </p>
 
             <div className="mb-4 flex items-start gap-2 rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2.5 text-xs text-amber-300">
               <AlertTriangle size={13} className="mt-px flex-shrink-0 text-amber-400" />
               <span>
-                <strong>Sandbox mode:</strong> PayPal integration is not yet connected to live credentials.
-                Clicking below simulates a successful payment for UI testing and no real charge is made.
+                <strong>Sandbox mode:</strong> this checkout uses your configured PayPal sandbox credentials. Test payments stay in PayPal sandbox and do not charge a live account.
               </span>
             </div>
 
-            <button
-              onClick={handlePayPal}
-              disabled={busy}
-              className="w-full rounded py-4 text-base font-black transition-all disabled:opacity-70"
-              style={{ backgroundColor: busy ? "#e0a800" : "#FFC439", color: "#003087" }}
-            >
-              {busy ? "Connecting to PayPal..." : "Pay with PayPal"}
-            </button>
+            {!payPalClientId && (
+              <div className="mb-4 rounded border border-rose-700/50 bg-rose-900/20 px-3 py-2.5 text-xs text-rose-300">
+                PayPal checkout is not available yet because no sandbox client ID is configured in the admin workflow settings.
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-4 rounded border border-rose-700/50 bg-rose-900/20 px-3 py-2.5 text-xs text-rose-300">
+                {error}
+              </div>
+            )}
+
+            <div
+              ref={paypalButtonRef}
+              className={`min-h-12 rounded ${busy ? "pointer-events-none opacity-70" : ""}`}
+            />
+
+            {payPalClientId && !sdkReady && (
+              <p className="mt-3 text-center text-xs text-slate-500">
+                Loading PayPal checkout...
+              </p>
+            )}
 
             <p className="mt-3 text-center text-xs text-slate-500">
               PayPal is the only payment method accepted at checkout.

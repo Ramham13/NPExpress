@@ -17,6 +17,7 @@ This verifies the exact sequence the application is supposed to own:
 - The Docker stack is running.
 - Admin unlock works at `/admin`.
 - Admin workflow settings include a reachable `n8nOrdersWebhookUrl`.
+- Admin workflow settings include valid PayPal sandbox credentials if you are testing the paid checkout path.
 - The n8n workflow is configured to call back to:
 
 ```text
@@ -76,6 +77,8 @@ Expected:
 - the confirmation screen renders a real order ID
 - the submitted cart remains visible on the confirmation screen
 - the live design cart is cleared only after confirmation state is preserved
+- PayPal orders are only accepted after the server verifies a completed capture
+- repeated submission of the same PayPal capture returns the existing local order instead of creating a duplicate
 
 ### 5. Local persistence
 
@@ -135,8 +138,7 @@ Expected:
 - `attempt_number` increments monotonically
 - a later successful retry moves the order to `n8n_sent` and then `n8n_confirmed`
 
-## Current Known Gaps
+## Current Notes
 
-- Server-side PayPal payment verification is still outstanding.
-- The proof endpoint still returns a summary SVG rather than a production proof package.
-- Full route-level integration coverage is still incomplete.
+- PayPal checkout is wired for sandbox mode. A live production rollout still requires live PayPal credentials, live n8n/email wiring, and a deployment-specific verification pass.
+- The printable proof path is now `proof.html`, with `proof-package.json` as the structured intake artifact.

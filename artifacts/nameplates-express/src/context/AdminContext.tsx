@@ -104,7 +104,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
             skipNextSizesSave.current = true;
             skipNextWorkflowSave.current = true;
             setSizes(serverSizes);
-            setWorkflowSettings({});
+            setWorkflowSettings((publicConfig as { workflowSettings?: Record<string, unknown> }).workflowSettings ?? {});
             saveAdminSizes(serverSizes);
           }
         } catch (fallbackErr) {

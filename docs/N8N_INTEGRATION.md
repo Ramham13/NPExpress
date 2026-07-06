@@ -17,9 +17,11 @@ Configure these values in the admin page for local testing, or provide them as e
 N8N_ORDERS_WEBHOOK_URL=
 N8N_CALLBACK_SECRET=
 N8N_SHARED_SECRET=
+PAYPAL_SANDBOX_CLIENT_ID=
+PAYPAL_SANDBOX_CLIENT_SECRET=
 ```
 
-The admin page values are persisted in PostgreSQL and are the preferred test path. Environment values should be treated as fallback defaults.
+The admin page values are persisted in PostgreSQL and are the preferred test path. Environment values should be treated as fallback defaults. Public callers only receive safe workflow settings such as `webhookEnabled` and the PayPal sandbox client ID.
 
 ## Outbound Website to n8n Handoff
 
@@ -38,6 +40,7 @@ Expected payload categories:
 - customer contact and shipping details
 - line items
 - nameplate configuration data
+- pricing summary
 - printable proof document reference
 - structured proof/data package reference
 - payment or invoice metadata
@@ -52,10 +55,11 @@ The outbound operation must remain idempotent. Retrying the same order should no
 2. Validate the shared secret/signature/token.
 3. Validate required fields and schema version.
 4. Store or reference the website order ID as the n8n idempotency key.
-5. Generate internal proof/order documents as needed.
-6. Send order-intake email to the configured business inbox.
-7. Send receipt/invoice confirmation email to the customer.
-8. POST confirmation back to the website callback endpoint.
+5. Read the proof references from the payload and pull `proof.html` / `proof-package.json` if needed.
+6. Generate internal proof/order documents as needed.
+7. Send order-intake email to the configured business inbox.
+8. Send receipt/invoice confirmation email to the customer.
+9. POST confirmation back to the website callback endpoint.
 
 ## n8n Confirmation Callback
 
@@ -84,6 +88,17 @@ The callback should include enough information for the website to correlate and 
 ```
 
 The request should include the configured callback secret/signature. Duplicate confirmations should be accepted as no-op success, not treated as a new handoff.
+
+## PayPal Checkout Handshake
+
+For paid orders, the website owns the payment-critical steps before n8n ever sees the order:
+
+1. The customer review screen creates a PayPal order through `POST /api/paypal/orders`.
+2. After buyer approval, the website captures the order through `POST /api/paypal/orders/:orderId/capture`.
+3. The website verifies the completed capture again during `POST /api/orders/finalize`.
+4. The verified PayPal order ID, capture ID, payer metadata, and charged amount are stored in the canonical local order payload.
+
+n8n should treat that payment metadata as already finalized website truth, not as a signal to re-run payment logic.
 
 ## Failure and Retry Behavior
 

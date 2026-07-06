@@ -1,8 +1,8 @@
 # Nameplates Express
 
-Nameplates Express is a browser-based ordering platform for custom anodized aluminum nameplates. Customers can configure plate size, color, text layout, bulk CSV rows, cart contents, and checkout details. The application persists admin configuration and canonical order records locally, then hands finalized orders to n8n for downstream email, invoice, and order-intake orchestration.
+Nameplates Express is a browser-based ordering platform for custom anodized aluminum nameplates. Customers can configure plate size, color, text layout, bulk CSV rows, cart contents, and checkout details. The application persists admin configuration and canonical order records locally, then hands finalized orders to n8n for downstream email, invoice, receipt, and order-intake orchestration.
 
-The repository currently represents a local Docker testing environment and public source mirror. It is functional for local validation, but it still has blocking production-readiness issues tracked in the local Gitea issue list and summarized in [docs/AUDIT_FINDINGS.md](docs/AUDIT_FINDINGS.md).
+This repository is the isolated local mirror and Docker test environment. The current implementation supports both invoice/quote submission and PayPal sandbox checkout with server-side capture verification before a paid order is finalized locally.
 
 ## Current State
 
@@ -11,6 +11,7 @@ The repository currently represents a local Docker testing environment and publi
 - Database: PostgreSQL in the Docker stack for admin configuration and order workflow state.
 - Local runtime: Docker Compose publishes the app at `http://127.0.0.1:8090`.
 - Admin route: `/admin`, unlocked by the local environment password.
+- PayPal integration: JavaScript SDK on the customer checkout screen, with server-side order creation, capture, and final verification.
 - n8n integration: outbound finalized-order webhook plus inbound confirmation callback.
 - Public GitHub remote: `https://github.com/Ramham13/NPExpress.git`.
 - Local Gitea mirror: used as an isolated backup and issue tracker.
@@ -83,18 +84,18 @@ Current workspace note:
 | --- | --- |
 | `/` | Customer-facing storefront and nameplate designer |
 | `/admin` | Admin configuration dashboard |
-| `/cart` | Cart review |
-| `/checkout` | Customer checkout flow |
-| `/checkout/done` | PayPal completion screen |
-| `/quote/done` | Manual quote completion screen |
 | `/api/health` | API health check |
 | `/api/admin/unlock` | Admin password unlock endpoint |
 | `/api/admin/config` | Admin configuration read/write endpoint |
-| `/api/orders` | Local order creation/listing endpoint |
-| `/api/orders/:orderId/n8n/send` | Outbound n8n send trigger |
+| `/api/paypal/orders` | Create a PayPal order from the current cart |
+| `/api/paypal/orders/:orderId/capture` | Capture an approved PayPal order on the server |
+| `/api/orders/finalize` | Persist the canonical local order and trigger n8n handoff |
+| `/api/orders` | Admin order listing endpoint |
 | `/api/orders/:orderId/proof.html` | Printable proof document for the order |
 | `/api/orders/:orderId/proof-package.json` | Structured proof/data package for intake workflows |
 | `/api/webhooks/n8n/order-confirmed` | Inbound n8n confirmation callback (`/order-confirmation` is also accepted as a compatibility alias) |
+
+Customer checkout, cart, quote, and confirmation views are internal application states under `/`, not standalone public routes.
 
 ## Order Lifecycle
 
@@ -111,17 +112,19 @@ Supported lifecycle states include:
 - `n8n_confirmed`
 - `n8n_failed`
 
-The API persists a canonical order record before attempting any n8n handoff. Each outbound delivery attempt is logged with timestamps, attempt status, request metadata, response metadata, payload checksum, and confirmation state. Duplicate sends are blocked after n8n confirmation.
+The API persists a canonical order record before attempting any n8n handoff. Each outbound delivery attempt is logged with timestamps, attempt status, request metadata, response metadata, payload checksum, and confirmation state. Duplicate sends are blocked after n8n confirmation, and repeated PayPal capture finalization is treated as a safe duplicate instead of creating a second paid order.
 
 ## n8n Integration
 
-Configure n8n values either through the admin page or environment defaults:
+Configure workflow values either through the admin page or environment defaults:
 
 - `N8N_ORDERS_WEBHOOK_URL`
 - `N8N_CALLBACK_SECRET`
 - `N8N_SHARED_SECRET`
+- `PAYPAL_SANDBOX_CLIENT_ID`
+- `PAYPAL_SANDBOX_CLIENT_SECRET`
 
-The admin configuration is the preferred local testing path because it is persisted in PostgreSQL and read by the backend sender. Environment values act as fallback defaults.
+The admin configuration is the preferred local testing path because it is persisted in PostgreSQL and read by the backend sender. Environment values act as fallback defaults. Public callers only receive safe workflow fields such as `webhookEnabled` and the sandbox PayPal client ID; secrets remain available only to unlocked admin sessions.
 
 See [docs/N8N_INTEGRATION.md](docs/N8N_INTEGRATION.md) for the webhook payload, callback contract, and recommended n8n workflow shape.
 
@@ -132,6 +135,7 @@ The admin page manages:
 - product sizes
 - pricing tiers
 - available plate colors
+- PayPal sandbox client ID and secret
 - n8n webhook URL
 - n8n callback/shared secrets
 
@@ -144,6 +148,7 @@ Local persistence is handled by PostgreSQL. The current app stores:
 - admin product and workflow configuration
 - canonical orders
 - order line-item/nameplate payload data
+- pricing summary and verified payment metadata
 - order lifecycle state
 - n8n delivery attempts and confirmation metadata
 
@@ -160,6 +165,7 @@ artifacts/nameplates-express/src/lib/__tests__/
 Important test coverage includes:
 
 - admin configuration schema behavior
+- PayPal order creation, capture, verification, and duplicate-finalization behavior
 - order state transitions
 - order workflow payload generation
 - n8n confirmation handling
