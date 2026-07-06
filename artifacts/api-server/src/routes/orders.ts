@@ -712,7 +712,8 @@ router.post("/orders/:orderId/status", async (req, res) => {
   }
 
   const { orderId } = req.params;
-  const { state, trackingNumber, carrier, labelUrl, source } = req.body as Record<string, unknown>;
+  const body = req.body as Record<string, unknown>;
+  const { state, trackingNumber, carrier, labelUrl, source } = body;
   if (typeof state !== "string") {
     res.status(400).json({ error: "Missing state" });
     return;
@@ -732,10 +733,18 @@ router.post("/orders/:orderId/status", async (req, res) => {
     state: nextState,
     payload: {
       ...(order.payload as Record<string, unknown>),
-      trackingNumber: typeof trackingNumber === "string" ? trackingNumber : undefined,
-      carrier: typeof carrier === "string" ? carrier : undefined,
-      labelUrl: typeof labelUrl === "string" ? labelUrl : undefined,
-      source: typeof source === "string" ? source : undefined,
+      trackingNumber: Object.prototype.hasOwnProperty.call(body, "trackingNumber")
+        ? (typeof trackingNumber === "string" ? trackingNumber : undefined)
+        : (order.payload as Record<string, unknown>).trackingNumber,
+      carrier: Object.prototype.hasOwnProperty.call(body, "carrier")
+        ? (typeof carrier === "string" ? carrier : undefined)
+        : (order.payload as Record<string, unknown>).carrier,
+      labelUrl: Object.prototype.hasOwnProperty.call(body, "labelUrl")
+        ? (typeof labelUrl === "string" ? labelUrl : undefined)
+        : (order.payload as Record<string, unknown>).labelUrl,
+      source: Object.prototype.hasOwnProperty.call(body, "source")
+        ? (typeof source === "string" ? source : undefined)
+        : (order.payload as Record<string, unknown>).source,
       statusUpdatedAt: new Date().toISOString(),
     },
   }).where(eq(orderTable.orderId, orderId));

@@ -499,6 +499,103 @@ describe("order workflow routes", () => {
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
   });
 
+  it("updates operational status and preserves existing fulfillment metadata when later updates omit it", async () => {
+    seedWorkflowSettings();
+    vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
+
+    const finalizeResponse = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "invoice",
+        paymentStatus: "pending",
+        customer: { name: "Jane Smith", email: "jane@example.com" },
+        cart: [{ id: "plate-1", size: { label: '6" x 2"' } }],
+      });
+
+    const [orderBeforeAck] = getTableRows(orderTable);
+    await request(app)
+      .post("/api/webhooks/n8n/order-confirmation")
+      .send({
+        orderId: finalizeResponse.body.orderId,
+        token: orderBeforeAck?.n8nDeliveryToken,
+      })
+      .expect(200);
+
+    const shippedResponse = await request(app)
+      .post(`/api/orders/${finalizeResponse.body.orderId}/status`)
+      .set(adminHeaders())
+      .send({
+        state: "shipped",
+        trackingNumber: "1Z999AA10123456784",
+        carrier: "UPS",
+        labelUrl: "https://carrier.example/labels/1",
+        source: "admin",
+      });
+
+    expect(shippedResponse.status).toBe(200);
+    expect(shippedResponse.body).toEqual({
+      ok: true,
+      orderId: finalizeResponse.body.orderId,
+      state: "shipped",
+    });
+    expect(getTableRows(orderTable)[0]?.payload).toMatchObject({
+      trackingNumber: "1Z999AA10123456784",
+      carrier: "UPS",
+      labelUrl: "https://carrier.example/labels/1",
+      source: "admin",
+    });
+
+    const deliveredResponse = await request(app)
+      .post(`/api/orders/${finalizeResponse.body.orderId}/status`)
+      .set(adminHeaders())
+      .send({ state: "delivered" });
+
+    expect(deliveredResponse.status).toBe(200);
+    expect(deliveredResponse.body).toEqual({
+      ok: true,
+      orderId: finalizeResponse.body.orderId,
+      state: "delivered",
+    });
+    expect(getTableRows(orderTable)[0]?.payload).toMatchObject({
+      trackingNumber: "1Z999AA10123456784",
+      carrier: "UPS",
+      labelUrl: "https://carrier.example/labels/1",
+      source: "admin",
+    });
+    expect(getTableRows(orderTable)[0]?.payload.statusUpdatedAt).toEqual(expect.any(String));
+  });
+
+  it("rejects invalid operational state transitions", async () => {
+    seedWorkflowSettings();
+    vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
+
+    const finalizeResponse = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "invoice",
+        paymentStatus: "pending",
+        customer: { name: "Jane Smith", email: "jane@example.com" },
+        cart: [{ id: "plate-1", size: { label: '6" x 2"' } }],
+      });
+
+    const [orderBeforeAck] = getTableRows(orderTable);
+    await request(app)
+      .post("/api/webhooks/n8n/order-confirmation")
+      .send({
+        orderId: finalizeResponse.body.orderId,
+        token: orderBeforeAck?.n8nDeliveryToken,
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post(`/api/orders/${finalizeResponse.body.orderId}/status`)
+      .set(adminHeaders())
+      .send({ state: "draft" });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toContain("Transition from n8n_confirmed to draft is not allowed");
+  });
+
   it("serves a printable proof document and structured proof package for persisted orders", async () => {
     seedWorkflowSettings();
     vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
