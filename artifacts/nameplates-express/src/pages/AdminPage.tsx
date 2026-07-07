@@ -306,13 +306,23 @@ export default function AdminPage() {
 }
 
 function AdminPageInner() {
-  const { sizes, activeSizes, addSize, updateSize, deleteSize, workflowSettings, updateWorkflowSettings } = useAdmin();
+  const {
+    sizes,
+    activeSizes,
+    addSize,
+    updateSize,
+    deleteSize,
+    workflowSettings,
+    updateWorkflowSettings,
+    saveStatus,
+    saveError,
+    dismissSaveFeedback,
+  } = useAdmin();
   const [view, setView]           = useState<AdminView>("list");
   const [editId, setEditId]       = useState<string | null>(null);
   const [form, setForm]           = useState<SizeForm | null>(null);
   const [errors, setErrors]       = useState<Partial<Record<string, string>>>({});
   const [deleteId, setDeleteId]   = useState<string | null>(null);
-  const [savedFlash, setSavedFlash]     = useState(false);
   const [workflowForm, setWorkflowForm] = useState({
     n8nOrdersWebhookUrl: String(workflowSettings.n8nOrdersWebhookUrl ?? ""),
     n8nCallbackSecret: String(workflowSettings.n8nCallbackSecret ?? ""),
@@ -332,6 +342,12 @@ function AdminPageInner() {
       sandboxPayPalSecret: String(workflowSettings.sandboxPayPalSecret ?? ""),
     });
   }, [workflowSettings]);
+
+  useEffect(() => {
+    if (saveStatus !== "saved") return;
+    const timer = window.setTimeout(() => dismissSaveFeedback(), 2500);
+    return () => window.clearTimeout(timer);
+  }, [dismissSaveFeedback, saveStatus]);
 
   const sortedSizes = [...sizes].sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -373,14 +389,10 @@ function AdminPageInner() {
     setForm(null);
     setEditId(null);
     setErrors({});
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 2500);
   }
 
   function saveWorkflowSettings() {
     updateWorkflowSettings(workflowForm as unknown as Record<string, unknown>);
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 2500);
   }
 
   function moveOrder(id: string, dir: -1 | 1) {
@@ -699,8 +711,8 @@ function AdminPageInner() {
               <Field label="Sandbox PayPal Secret">
                 <input type="password" autoComplete="new-password" className={INP} value={workflowForm.sandboxPayPalSecret} onChange={e => setWorkflowForm(p => ({ ...p, sandboxPayPalSecret: e.target.value }))} />
               </Field>
-              <button type="button" onClick={saveWorkflowSettings} className="rounded bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm font-bold text-white">
-                Save Workflow Settings
+              <button type="button" onClick={saveWorkflowSettings} disabled={saveStatus === "saving"} className="rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-70 px-4 py-2 text-sm font-bold text-white">
+                {saveStatus === "saving" ? "Saving..." : "Save Workflow Settings"}
               </button>
             </div>
           </div>
@@ -708,10 +720,24 @@ function AdminPageInner() {
           <RecentOrdersPanel />
         </div>
 
-        {savedFlash && (
+        {saveStatus === "saving" && (
+          <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <Info size={15} className="flex-shrink-0" />
+            Saving admin changes...
+          </div>
+        )}
+
+        {saveStatus === "saved" && (
           <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             <Check size={15} className="flex-shrink-0" />
             Changes saved successfully.
+          </div>
+        )}
+
+        {saveStatus === "error" && saveError && (
+          <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <AlertTriangle size={15} className="flex-shrink-0" />
+            {saveError}
           </div>
         )}
 

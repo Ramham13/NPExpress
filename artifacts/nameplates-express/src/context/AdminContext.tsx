@@ -39,29 +39,20 @@ function emitBrowserEvent(name: string) {
   window.dispatchEvent(new Event(name));
 }
 
-async function persistConfig(sizes: AdminSize[], workflowSettings: Record<string, unknown>): Promise<void> {
-  try {
-    await putAdminConfig({ sizes, workflowSettings }, adminRequestOptions());
-  } catch (err) {
-    if (isUnauthorizedError(err)) {
-      clearAdminSession();
-      emitBrowserEvent(ADMIN_AUTH_EXPIRED_EVENT);
-      return;
-    }
-
-    console.error("[AdminContext] Failed to persist config to server:", err);
-  }
-}
+export type AdminSaveStatus = "idle" | "saving" | "saved" | "error";
 
 interface AdminContextValue {
   sizes: AdminSize[];
   activeSizes: AdminSize[];
   workflowSettings: Record<string, unknown>;
   isLoading: boolean;
+  saveStatus: AdminSaveStatus;
+  saveError: string | null;
   addSize: (data: Omit<AdminSize, "id">) => void;
   updateSize: (id: string, patch: Partial<AdminSize>) => void;
   deleteSize: (id: string) => void;
   updateWorkflowSettings: (patch: Record<string, unknown>) => void;
+  dismissSaveFeedback: () => void;
 }
 
 const AdminContext = createContext<AdminContextValue | null>(null);
@@ -70,11 +61,45 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [sizes, setSizes] = useState<AdminSize[]>(loadAdminSizes);
   const [workflowSettings, setWorkflowSettings] = useState<Record<string, unknown>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<AdminSaveStatus>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const initializedFromApi = useRef(false);
   const skipNextSizesSave = useRef(false);
   const skipNextWorkflowSave = useRef(false);
   const isFirstRender = useRef(true);
+  const persistSequence = useRef(0);
+
+  const dismissSaveFeedback = useCallback(() => {
+    setSaveStatus("idle");
+    setSaveError(null);
+  }, []);
+
+  const persistConfig = useCallback(async (nextSizes: AdminSize[], nextWorkflowSettings: Record<string, unknown>) => {
+    const sequence = ++persistSequence.current;
+    setSaveStatus("saving");
+    setSaveError(null);
+
+    try {
+      await putAdminConfig({ sizes: nextSizes, workflowSettings: nextWorkflowSettings }, adminRequestOptions());
+      if (persistSequence.current === sequence) {
+        setSaveStatus("saved");
+        setSaveError(null);
+      }
+    } catch (err) {
+      if (isUnauthorizedError(err)) {
+        clearAdminSession();
+        emitBrowserEvent(ADMIN_AUTH_EXPIRED_EVENT);
+        return;
+      }
+
+      console.error("[AdminContext] Failed to persist config to server:", err);
+      if (persistSequence.current === sequence) {
+        setSaveStatus("error");
+        setSaveError("We couldn't save the admin configuration. Check the server and try again.");
+      }
+    }
+  }, []);
 
   const fetchConfig = useCallback(async () => {
     setIsLoading(true);
@@ -89,6 +114,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         setSizes(serverSizes);
         setWorkflowSettings((apiConfig as { workflowSettings?: Record<string, unknown> }).workflowSettings ?? {});
         saveAdminSizes(serverSizes);
+        dismissSaveFeedback();
       }
     } catch (err) {
       if (isUnauthorizedError(err)) {
@@ -106,6 +132,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
             setSizes(serverSizes);
             setWorkflowSettings((publicConfig as { workflowSettings?: Record<string, unknown> }).workflowSettings ?? {});
             saveAdminSizes(serverSizes);
+            dismissSaveFeedback();
           }
         } catch (fallbackErr) {
           console.error("[AdminContext] Failed to reload public admin config:", fallbackErr);
@@ -185,10 +212,13 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         activeSizes,
         workflowSettings,
         isLoading,
+        saveStatus,
+        saveError,
         addSize,
         updateSize,
         deleteSize,
         updateWorkflowSettings,
+        dismissSaveFeedback,
       }}
     >
       {children}
