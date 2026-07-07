@@ -34,6 +34,12 @@ function emitAdminAuthChanged() {
   window.dispatchEvent(new Event(ADMIN_AUTH_CHANGED_EVENT));
 }
 
+function getErrorStatus(err: unknown): number | null {
+  if (typeof err !== "object" || err === null || !("status" in err)) return null;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" ? status : null;
+}
+
 // ─── AdminGate ────────────────────────────────────────────────────────────────
 
 function AdminGate({ children }: { children: React.ReactNode }) {
@@ -70,9 +76,16 @@ function AdminGate({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(ADMIN_KEY_SESSION_STORAGE, token);
       setUnlocked(true);
       emitAdminAuthChanged();
-    } catch {
-      setError(true);
-      setInput("");
+    } catch (err) {
+      const status = getErrorStatus(err);
+      if (status === 401) {
+        setError(true);
+        setInput("");
+      } else if (status === 503) {
+        setNotice("Admin authentication is not configured on the server yet.");
+      } else {
+        setNotice("Unable to unlock admin access right now. Check the server connection and try again.");
+      }
     } finally {
       setLoading(false);
     }
