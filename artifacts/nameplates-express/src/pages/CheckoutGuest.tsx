@@ -53,7 +53,7 @@ interface Props {
   mode: "paypal" | "quote";
   initialInfo: GuestInfo;
   onBack: () => void;
-  onSubmit: (info: GuestInfo) => void;
+  onSubmit: (info: GuestInfo) => void | Promise<void>;
 }
 
 // ─── Reusable input primitives ────────────────────────────────────────────────
@@ -99,10 +99,13 @@ function CountrySelect({ value, onChange }: { value: string; onChange: (v: strin
 export default function CheckoutGuest({ cart, mode, initialInfo, onBack, onSubmit }: Props) {
   const [info, setInfo] = useState<GuestInfo>(initialInfo);
   const [errors, setErrors] = useState<Partial<Record<keyof GuestInfo, string>>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function set<K extends keyof GuestInfo>(key: K, value: GuestInfo[K]) {
     setInfo(prev => ({ ...prev, [key]: value }));
     setErrors(prev => ({ ...prev, [key]: undefined }));
+    setSubmitError(null);
   }
 
   function validate(): boolean {
@@ -124,21 +127,32 @@ export default function CheckoutGuest({ cart, mode, initialInfo, onBack, onSubmi
     return Object.keys(e).length === 0;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (validate()) onSubmit(info);
+    if (!validate()) return;
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSubmit(info);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "We could not submit your order right now. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const isPaypal   = mode === "paypal";
   const title      = isPaypal ? "Guest Checkout" : "Submit Quote / Request Invoice";
-  const submitLabel = isPaypal ? "Continue to Order Review →" : "Submit Quote Request →";
-
+  const submitButtonLabel = submitting
+    ? (isPaypal ? "Preparing Order Review..." : "Submitting Quote Request...")
+    : (isPaypal ? "Continue to Order Review ->" : "Submit Quote Request ->");
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
       {/* Header */}
       <header className="flex items-center gap-4 px-6 py-4 border-b border-slate-800 bg-[hsl(220_20%_9%)] flex-shrink-0">
-        <button onClick={onBack}
-          className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
+        <button onClick={onBack} disabled={submitting}
+          className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-40">
           <ArrowLeft size={16} /> Back to Order
         </button>
         <div className="flex-1" />
@@ -279,11 +293,17 @@ export default function CheckoutGuest({ cart, mode, initialInfo, onBack, onSubmi
                 placeholder="Delivery requirements, urgency, compliance standards, or any other instructions" />
             </Field>
 
+            {submitError && (
+              <div className="rounded border border-rose-700/50 bg-rose-900/20 px-4 py-3 text-sm text-rose-300">
+                {submitError}
+              </div>
+            )}
+
             {/* ── Submit ── */}
             <div className="pt-2 space-y-3">
-              <button type="submit"
-                className="w-full rounded bg-blue-600 hover:bg-blue-500 py-3.5 text-sm font-bold text-white transition-colors">
-                {submitLabel}
+              <button type="submit" disabled={submitting}
+                className="w-full rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-70 py-3.5 text-sm font-bold text-white transition-colors">
+                {submitButtonLabel}
               </button>
               <p className="text-center text-xs text-slate-500">
                 {isPaypal

@@ -13,7 +13,27 @@ interface Props {
   onNewOrder: () => void;
 }
 
+function handoffMessage(handoffState: Props["handoffState"]) {
+  if (handoffState === "sent") {
+    return {
+      tone: "muted",
+      text: "The invoice handoff has been sent to operations.",
+    } as const;
+  }
+  if (handoffState === "failed") {
+    return {
+      tone: "warning",
+      text: "Your request was saved, but the operations handoff needs manual attention. We can still recover it from the order system.",
+    } as const;
+  }
+  return {
+    tone: "muted",
+    text: "Final handoff is processing.",
+  } as const;
+}
+
 export default function QuoteDone({ guestInfo, cart, handoffState, onNewOrder }: Props) {
+  const handoff = handoffMessage(handoffState);
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
       <div className="flex-1 overflow-y-auto">
@@ -32,8 +52,8 @@ export default function QuoteDone({ guestInfo, cart, handoffState, onNewOrder }:
               and will follow up at{" "}
               <strong className="text-slate-200">{guestInfo.email}</strong> within 1 business day.
             </p>
-            <p className="mt-3 text-xs text-slate-500">
-              {handoffState === "sent" ? "The invoice handoff has been sent to operations." : "Final handoff is processing."}
+            <p className={`mt-3 text-xs ${handoff.tone === "warning" ? "text-amber-400" : "text-slate-500"}`}>
+              {handoff.text}
             </p>
           </div>
 

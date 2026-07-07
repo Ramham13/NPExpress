@@ -22,6 +22,7 @@ import CheckoutGuest, { blankGuestInfo, type GuestInfo } from "@/pages/CheckoutG
 import CheckoutReview from "@/pages/CheckoutReview";
 import CheckoutDone from "@/pages/CheckoutDone";
 import QuoteDone from "@/pages/QuoteDone";
+import { resolveFinalizeOrderResult, type FinalizeHandoffState } from "@/lib/finalize-order";
 
 // Inner padding used only in the editor preview (decorative divider line inset)
 const IPAD_RATIO = 0.008;
@@ -47,7 +48,7 @@ export default function Designer() {
   const [guestInfo,      setGuestInfo]      = useState<GuestInfo>(blankGuestInfo());
   const [orderNumber,    setOrderNumber]    = useState<string>("");
   const [confirmedCart,  setConfirmedCart]  = useState<CartItem[]>([]);
-  const [handoffState,   setHandoffState]   = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [handoffState,   setHandoffState]   = useState<"idle" | "sending" | FinalizeHandoffState>("idle");
 
   function startCheckout() { setAppView("checkout"); }
   function startQuote()    { setAppView("quote");    }
@@ -61,7 +62,7 @@ export default function Designer() {
     infoSnapshot: GuestInfo;
     paypalOrderId?: string;
     paypalCaptureId?: string;
-  }) {
+  }): Promise<{ orderId: string; handoffState: FinalizeHandoffState }> {
     const response = await fetch("/api/orders/finalize", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -74,16 +75,8 @@ export default function Designer() {
         paypalCaptureId: args.paypalCaptureId,
       }),
     });
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({})) as { error?: unknown };
-      const message = typeof errorData.error === "string" ? errorData.error : `Order finalize failed: ${response.status}`;
-      throw new Error(message);
-    }
-    const data = await response.json() as { orderId?: unknown };
-    if (typeof data.orderId !== "string" || !data.orderId) {
-      throw new Error("Order finalize response did not include an order id");
-    }
-    return data.orderId;
+    const data = await response.json().catch(() => ({}));
+    return resolveFinalizeOrderResult(response.status, data);
   }
 
   // ── Design state ────────────────────────────────────────────────────────
@@ -333,11 +326,11 @@ export default function Designer() {
             paypalOrderId,
             paypalCaptureId,
           })
-            .then((num) => {
-              setOrderNumber(num);
+            .then(({ orderId, handoffState: nextHandoffState }) => {
+              setOrderNumber(orderId);
               setConfirmedCart(snapshot);
               setCart([]);
-              setHandoffState("sent");
+              setHandoffState(nextHandoffState);
               setAppView("order-confirmed");
             })
             .catch((err) => {
@@ -368,25 +361,27 @@ export default function Designer() {
         mode="quote"
         initialInfo={guestInfo}
         onBack={goToCart}
-        onSubmit={(info) => {
+        onSubmit={async (info) => {
           const snapshot = [...cart];
           const infoSnapshot = { ...info };
           setGuestInfo(infoSnapshot);
           setHandoffState("sending");
-          void finalizeOrder({
-            paymentMethod: "invoice",
-            paymentStatus: "pending",
-            cartSnapshot: snapshot,
-            infoSnapshot,
-          })
-            .then((num) => {
-              setOrderNumber(num);
-              setConfirmedCart(snapshot);
-              setCart([]);
-              setHandoffState("sent");
-              setAppView("quote-confirmed");
-            })
-            .catch(() => setHandoffState("failed"));
+          try {
+            const { orderId, handoffState: nextHandoffState } = await finalizeOrder({
+              paymentMethod: "invoice",
+              paymentStatus: "pending",
+              cartSnapshot: snapshot,
+              infoSnapshot,
+            });
+            setOrderNumber(orderId);
+            setConfirmedCart(snapshot);
+            setCart([]);
+            setHandoffState(nextHandoffState);
+            setAppView("quote-confirmed");
+          } catch (err) {
+            setHandoffState("failed");
+            throw err;
+          }
         }}
       />
     );

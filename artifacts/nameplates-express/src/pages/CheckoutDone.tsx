@@ -16,8 +16,28 @@ interface Props {
   onNewOrder: () => void;
 }
 
+function handoffMessage(handoffState: Props["handoffState"]) {
+  if (handoffState === "sent") {
+    return {
+      tone: "muted",
+      text: "The order has been handed off to fulfillment.",
+    } as const;
+  }
+  if (handoffState === "failed") {
+    return {
+      tone: "warning",
+      text: "Your order was saved, but the fulfillment handoff needs manual attention. We can still recover it from the order system.",
+    } as const;
+  }
+  return {
+    tone: "muted",
+    text: "Final handoff is processing.",
+  } as const;
+}
+
 export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffState, onNewOrder }: Props) {
   const shipTo = [guestInfo.city, guestInfo.state].filter(Boolean).join(", ");
+  const handoff = handoffMessage(handoffState);
 
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
@@ -35,8 +55,8 @@ export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffStat
               A Nameplates Express team member will review your order and contact you at{" "}
               <strong className="text-slate-200">{guestInfo.email}</strong> if any proof or fulfillment follow-up is needed.
             </p>
-            <p className="mt-3 text-xs text-slate-500">
-              {handoffState === "sent" ? "The order has been handed off to fulfillment." : "Final handoff is processing."}
+            <p className={`mt-3 text-xs ${handoff.tone === "warning" ? "text-amber-400" : "text-slate-500"}`}>
+              {handoff.text}
             </p>
           </div>
 
