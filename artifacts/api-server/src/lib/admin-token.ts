@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+const MAX_FUTURE_SKEW_MS = 60 * 1000; // 1 minute
 const PAYLOAD_SUFFIX = ":nx_admin_session";
 
 /**
@@ -27,6 +28,7 @@ export function verifyAdminToken(token: string, password: string): boolean {
   const timestamp = Number(ts);
 
   if (!Number.isFinite(timestamp)) return false;
+  if (timestamp - Date.now() > MAX_FUTURE_SKEW_MS) return false;
   if (Date.now() - timestamp > TOKEN_TTL_MS) return false;
 
   const expected = hmac(password, ts + PAYLOAD_SUFFIX);
