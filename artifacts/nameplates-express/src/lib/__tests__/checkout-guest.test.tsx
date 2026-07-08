@@ -28,7 +28,7 @@ function validGuestInfo(): GuestInfo {
 }
 
 describe("CheckoutGuest", () => {
-  it("shows async quote submit errors and re-enables the submit button", async () => {
+  it("shows customer-safe async quote submit errors and re-enables the submit button", async () => {
     const onSubmit = vi.fn(async () => {
       throw new Error("n8n shared secret is not configured");
     });
@@ -45,9 +45,30 @@ describe("CheckoutGuest", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Submit Quote Request/i }));
 
-    await screen.findByText("n8n shared secret is not configured");
+    await screen.findByText("We couldn't submit your quote request right now. Please try again in a moment.");
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: /Submit Quote Request/i })).toBeEnabled();
+  });
+
+  it("preserves unknown submit errors so genuinely useful messages are not hidden", async () => {
+    const onSubmit = vi.fn(async () => {
+      throw new Error("Please contact support with reference NX-TEST-001.");
+    });
+
+    render(
+      <CheckoutGuest
+        cart={[]}
+        mode="quote"
+        initialInfo={validGuestInfo()}
+        onBack={() => {}}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Submit Quote Request/i }));
+
+    await screen.findByText("Please contact support with reference NX-TEST-001.");
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it("disables quote submit while the request is in flight", async () => {

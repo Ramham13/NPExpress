@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { ArrowLeft, User, MapPin, FileText, CreditCard } from "lucide-react";
 import type { CartItem } from "@/lib/plate-utils";
+import { getCustomerFacingCheckoutSubmitErrorMessage } from "@/lib/checkout-submit-copy";
 
 // ─── Shared GuestInfo type (imported by sibling checkout pages) ───────────────
 
@@ -136,7 +137,7 @@ export default function CheckoutGuest({ cart, mode, initialInfo, onBack, onSubmi
     try {
       await onSubmit(info);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "We could not submit your order right now. Please try again.");
+      setSubmitError(getCustomerFacingCheckoutSubmitErrorMessage(err, mode));
     } finally {
       setSubmitting(false);
     }
