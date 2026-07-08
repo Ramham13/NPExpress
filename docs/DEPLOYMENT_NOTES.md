@@ -16,6 +16,14 @@ Default local URLs:
 - Admin: `http://127.0.0.1:8090/admin`
 - Health: `http://127.0.0.1:8090/api/health`
 
+The admin page is now the primary local operator surface for:
+
+- product and workflow configuration
+- reviewing persisted orders
+- inspecting delivery-attempt audit history
+- opening protected proof assets
+- retrying failed n8n handoffs
+
 Use `docker/.env.local.example` as the template for the private local environment file:
 
 ```powershell

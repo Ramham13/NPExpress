@@ -10,7 +10,7 @@ This repository is the isolated local mirror and Docker test environment. The cu
 - API: Express running under Node.js.
 - Database: PostgreSQL in the Docker stack for admin configuration and order workflow state.
 - Local runtime: Docker Compose publishes the app at `http://127.0.0.1:8090`.
-- Admin route: `/admin`, unlocked by the local environment password.
+- Admin route: `/admin`, unlocked by the local environment password, with product configuration plus recent-order review, proof access, and n8n retry tooling.
 - PayPal integration: JavaScript SDK on the customer checkout screen, with server-side order creation, capture, and final verification.
 - n8n integration: outbound finalized-order webhook plus inbound confirmation callback.
 - Public GitHub remote: `https://github.com/Ramham13/NPExpress.git`.
@@ -143,6 +143,10 @@ The admin page manages:
 - product sizes
 - pricing tiers
 - available plate colors
+- recent-order review
+- protected proof document / proof data access
+- delivery-attempt audit review
+- n8n retry actions for failed handoffs
 - PayPal sandbox client ID and secret
 - n8n webhook URL
 - n8n callback secret
@@ -169,17 +173,21 @@ Relevant automated tests live under:
 
 ```text
 artifacts/nameplates-express/src/lib/__tests__/
+artifacts/api-server/src/lib/__tests__/
+artifacts/api-server/src/routes/__tests__/
 ```
 
 Important test coverage includes:
 
 - admin configuration schema behavior
+- admin recent-order review and retry behavior
 - PayPal order creation, capture, verification, and duplicate-finalization behavior
 - order state transitions
 - order workflow payload generation
 - n8n confirmation handling
 - retry/failure behavior
 - add-to-cart guard behavior
+- admin-token and protected-route behavior
 
 Run tests from a prepared workspace:
 

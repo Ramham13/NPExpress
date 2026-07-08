@@ -93,6 +93,7 @@ Expected:
   - `n8n_sent`
   - `n8n_failed`
   - `n8n_confirmed`
+- the admin Recent Orders panel can load the protected order detail view for that order
 
 ### 6. Delivery audit row
 
@@ -104,6 +105,18 @@ Expected:
 - `attempt_number` starts at `1`
 - request payload and checksum are stored
 - response status and confirmation state are populated
+- the admin Recent Orders panel shows the attempt history without requiring manual API calls
+
+### 6a. Proof assets
+
+From the admin Recent Orders panel, open the proof document and proof data package for the created order.
+
+Expected:
+
+- the proof document opens successfully from the admin UI
+- the proof data package opens successfully from the admin UI
+- both requests stay protected behind admin authentication
+- the operator does not need to hand-build proof URLs manually
 
 ### 7. n8n callback
 

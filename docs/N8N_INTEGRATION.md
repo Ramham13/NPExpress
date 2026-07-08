@@ -23,6 +23,8 @@ PAYPAL_SANDBOX_CLIENT_SECRET=
 
 The admin page values are persisted in PostgreSQL and are the preferred test path. Environment values should be treated as fallback defaults. Public callers only receive safe workflow settings such as `webhookEnabled` and the PayPal sandbox client ID.
 
+Unlocked admin sessions can also use the Recent Orders panel to review persisted orders, inspect delivery attempts, and open the protected proof assets that n8n may consume.
+
 Use separate secrets for the two webhook directions when possible:
 
 - `n8nSharedSecret` / `N8N_SHARED_SECRET`: used by the website to generate the outbound order delivery token.
