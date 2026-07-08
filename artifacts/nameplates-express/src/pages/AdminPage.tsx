@@ -969,12 +969,13 @@ export function RecentOrdersPanel() {
   const selectedOrder = detail?.order ?? selected;
   const selectedOrderId = getOrderId(selectedOrder);
   const payload = getNestedRecord(selectedOrder, "payload");
+  const payment = getNestedRecord(payload, "payment");
   const customer = getNestedRecord(payload, "customer");
   const trackingNumber = getOptionalString(payload?.trackingNumber);
   const carrier = getOptionalString(payload?.carrier);
   const labelUrl = getOptionalString(payload?.labelUrl);
-  const paymentMethod = getOptionalString(payload?.paymentMethod);
-  const paymentStatus = getOptionalString(payload?.paymentStatus);
+  const paymentMethod = getOptionalString(payload?.paymentMethod) ?? getOptionalString(payment?.provider);
+  const paymentStatus = getOptionalString(payment?.status) ?? getOptionalString(payload?.paymentStatus);
   const createdAt = formatDateTime(selectedOrder?.createdAt);
   const acknowledgedAt = formatDateTime(selectedOrder?.n8nAckReceivedAt);
 

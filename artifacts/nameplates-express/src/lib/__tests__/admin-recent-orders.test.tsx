@@ -42,7 +42,7 @@ describe("RecentOrdersPanel", () => {
           payload: {
             customer: { name: "Jane Smith", email: "jane@example.com" },
             paymentMethod: "invoice",
-            paymentStatus: "pending",
+            payment: { provider: "invoice", status: "pending" },
           },
         },
         attempts: [{
@@ -71,7 +71,7 @@ describe("RecentOrdersPanel", () => {
           payload: {
             customer: { name: "Jane Smith", email: "jane@example.com" },
             paymentMethod: "invoice",
-            paymentStatus: "pending",
+            payment: { provider: "invoice", status: "pending" },
           },
         },
         attempts: [{
@@ -89,6 +89,7 @@ describe("RecentOrdersPanel", () => {
     await screen.findByRole("button", { name: /NX-2026-ABC123/i });
     fireEvent.click(screen.getByRole("button", { name: /NX-2026-ABC123/i }));
     await screen.findByText("jane@example.com");
+    expect(screen.getByText("pending")).toBeInTheDocument();
     expect(screen.getAllByText("State: n8n_failed")).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: /Retry n8n/i }));
@@ -114,7 +115,7 @@ describe("RecentOrdersPanel", () => {
           payload: {
             customer: { name: "Jane Smith", email: "jane@example.com" },
             paymentMethod: "invoice",
-            paymentStatus: "pending",
+            payment: { provider: "invoice", status: "pending" },
           },
         },
         attempts: [],
@@ -146,7 +147,7 @@ describe("RecentOrdersPanel", () => {
           payload: {
             customer: { name: "Jane Smith", email: "jane@example.com" },
             paymentMethod: "paypal",
-            paymentStatus: "paid",
+            payment: { provider: "paypal", status: "paid" },
             trackingNumber: "1Z999AA10123456784",
             carrier: "UPS",
           },
@@ -171,6 +172,7 @@ describe("RecentOrdersPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /NX-2026-ABC123/i }));
 
     await screen.findByText("jane@example.com");
+    expect(screen.getByText("paid")).toBeInTheDocument();
     expect(screen.getByText("1Z999AA10123456784 (UPS)")).toBeInTheDocument();
     expect(screen.getByText(/Attempt #2 - confirmed/i)).toBeInTheDocument();
 
