@@ -451,6 +451,8 @@ export default function Designer() {
             {/* Cart badge */}
             <button
               onClick={() => setAppView("cart")}
+              aria-label={`View order${cart.length > 0 ? ` (${cart.length} item${cart.length === 1 ? "" : "s"})` : ""}`}
+              title="View order"
               className="relative flex items-center gap-1.5 text-xs text-slate-300 hover:text-white transition-colors"
             >
               <ShoppingCart size={15} />
