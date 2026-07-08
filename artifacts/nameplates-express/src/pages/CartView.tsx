@@ -10,6 +10,7 @@ import {
 } from "@/lib/plate-utils";
 import { getColorHex, getColorLabel } from "@/lib/admin-store";
 import { summarizeCartItemText } from "@/lib/cart-item-summary";
+import { buildCartPricingSummary } from "@/lib/cart-pricing";
 
 interface Props {
   cart: CartItem[];
@@ -23,7 +24,6 @@ interface Props {
 export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckout, onQuote }: Props) {
   const { sizes } = useAdmin();
 
-  // Group items by batchId for display
   const batches: Map<string, CartItem[]> = new Map();
   const singles: CartItem[] = [];
 
@@ -36,19 +36,11 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
     }
   }
 
-  // Pricing helpers
-  function itemPrice(item: CartItem): number | null {
-    const as = sizes.find(s => s.id === item.size.id);
-    return as ? as.basePrice : null;
-  }
-
-  const pricedItems = cart.map(i => itemPrice(i)).filter((p): p is number => p !== null);
-  const subtotal    = pricedItems.reduce((s, p) => s + p, 0);
-  const anyPriced   = pricedItems.length > 0;
+  const pricing = buildCartPricingSummary(cart, sizes);
+  const anyPriced = pricing.hasPricedItems;
 
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
-      {/* Header */}
       <header className="flex items-center gap-4 px-6 py-4 border-b border-slate-800 bg-[hsl(220_20%_9%)]">
         <button
           onClick={onBack}
@@ -87,7 +79,6 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
           </div>
         ) : (
           <div className="mx-auto max-w-4xl px-6 py-6 space-y-8">
-            {/* Single items */}
             {singles.length > 0 && (
               <section>
                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">
@@ -99,7 +90,7 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
                       key={item.id}
                       item={item}
                       label={`Item ${idx + 1}`}
-                      price={itemPrice(item)}
+                      price={pricing.itemPrices.get(item.id) ?? null}
                       onRemove={() => onRemove(item.id)}
                     />
                   ))}
@@ -107,20 +98,19 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
               </section>
             )}
 
-            {/* CSV batches */}
             {[...batches.entries()].map(([batchId, items], bIdx) => (
               <section key={batchId}>
                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-2">
                   <Package size={13} />
-                  Batch {bIdx + 1} — {items.length} nameplates from CSV
+                  Batch {bIdx + 1} - {items.length} nameplates from CSV
                 </h2>
                 <div className="space-y-3">
                   {items.map((item, idx) => (
                     <CartRow
                       key={item.id}
                       item={item}
-                      label={`Batch ${bIdx + 1} · Item ${idx + 1}`}
-                      price={itemPrice(item)}
+                      label={`Batch ${bIdx + 1} - Item ${idx + 1}`}
+                      price={pricing.itemPrices.get(item.id) ?? null}
                       onRemove={() => onRemove(item.id)}
                     />
                   ))}
@@ -128,21 +118,20 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
               </section>
             ))}
 
-            {/* Order subtotal */}
             {anyPriced && (
               <div className="rounded border border-slate-700 bg-[hsl(220_20%_10%)] px-5 py-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-400">Estimated Subtotal</span>
-                  <span className="text-base font-bold text-slate-100">${subtotal.toFixed(2)}</span>
+                  <span className="text-base font-bold text-slate-100">${pricing.subtotal.toFixed(2)}</span>
                 </div>
-                {cart.length >= 10 && (
+                {pricing.hasTierPricing && (
                   <p className="text-xs text-blue-400 flex items-center gap-1.5">
                     <DollarSign size={11} />
-                    Quantity discounts may apply — confirmed at invoice.
+                    Quantity pricing is already reflected in this estimate.
                   </p>
                 )}
                 <p className="text-xs text-slate-500">
-                  Based on base unit price per size. Final pricing confirmed before any charge.
+                  Based on current configured website pricing before shipping or fulfillment follow-up.
                 </p>
               </div>
             )}
@@ -150,7 +139,6 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
         )}
       </div>
 
-      {/* Footer — two checkout paths */}
       {cart.length > 0 && (
         <div className="sticky bottom-0 border-t border-slate-800 bg-[hsl(220_20%_9%)] px-6 py-4">
           <div className="flex items-center gap-3 mb-3">
@@ -160,7 +148,7 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
             </span>
             {anyPriced && (
               <span className="text-sm font-semibold text-slate-200 ml-1">
-                · est. ${subtotal.toFixed(2)}
+                - est. ${pricing.subtotal.toFixed(2)}
               </span>
             )}
             <div className="flex-1" />
@@ -192,7 +180,6 @@ export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckou
   );
 }
 
-// ─── Row component ─────────────────────────────────────────────────────────────
 function CartRow({ item, label, price, onRemove }: {
   item: CartItem; label: string; price: number | null; onRemove: () => void;
 }) {
@@ -203,7 +190,6 @@ function CartRow({ item, label, price, onRemove }: {
 
   return (
     <div className="flex items-center gap-4 rounded-md border border-slate-700 bg-[hsl(220_20%_11%)] p-3">
-      {/* Thumbnail */}
       <div className="w-36 shrink-0 bg-[hsl(220_20%_8%)] rounded overflow-hidden">
         <PlateFinalPreview
           uid={`cart-${item.id}`}
@@ -217,28 +203,26 @@ function CartRow({ item, label, price, onRemove }: {
         />
       </div>
 
-      {/* Details */}
       <div className="flex-1 min-w-0">
         <p className="text-xs text-slate-500 mb-0.5">{label}</p>
         <p className="text-sm font-semibold text-slate-200 truncate">{summarizeCartItemText(item)}</p>
         <div className="flex items-center gap-3 mt-1 flex-wrap">
           <p className="text-xs text-slate-500">
-            {item.size.label} · {item.direction} · {zones.length} zone{zones.length !== 1 ? "s" : ""}
+            {item.size.label} - {item.direction} - {zones.length} zone{zones.length !== 1 ? "s" : ""}
           </p>
-          {/* Color swatch */}
           <span className="flex items-center gap-1 text-xs text-slate-500">
-            <span className="w-3 h-3 rounded-full border border-slate-600 inline-block"
-              style={{ backgroundColor: getColorHex(item.color, sizeColors) }} />
+            <span
+              className="w-3 h-3 rounded-full border border-slate-600 inline-block"
+              style={{ backgroundColor: getColorHex(item.color, sizeColors) }}
+            />
             {getColorLabel(item.color, sizeColors)}
           </span>
-          {/* Price */}
           {price !== null && (
             <span className="text-xs font-semibold text-slate-300">${price.toFixed(2)}</span>
           )}
         </div>
       </div>
 
-      {/* Remove */}
       <button
         onClick={onRemove}
         className="shrink-0 p-2 rounded text-slate-600 hover:text-red-400 hover:bg-slate-800 transition-colors"

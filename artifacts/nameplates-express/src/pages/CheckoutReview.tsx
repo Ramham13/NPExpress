@@ -3,8 +3,9 @@ import { ArrowLeft, MapPin, User, ShoppingCart, AlertTriangle, Receipt } from "l
 import PlateFinalPreview from "@/components/PlateFinalPreview";
 import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
 import { useAdmin } from "@/context/AdminContext";
-import { getColorHex, getColorLabel, resolvePrice } from "@/lib/admin-store";
+import { getColorHex, getColorLabel } from "@/lib/admin-store";
 import { summarizeCartItemText } from "@/lib/cart-item-summary";
+import { buildCartPricingSummary } from "@/lib/cart-pricing";
 import { getPayPalTestModeMessage, getPayPalUnavailableMessage } from "@/lib/paypal-copy";
 import type { GuestInfo } from "./CheckoutGuest";
 
@@ -21,29 +22,6 @@ function AddrLines({ lines }: { lines: (string | undefined)[] }) {
       {lines.filter(Boolean).map((line, index) => <p key={index}>{line}</p>)}
     </div>
   );
-}
-
-function buildCartSummary(cart: CartItem[], sizes: ReturnType<typeof useAdmin>["sizes"]) {
-  const counts = new Map<string, number>();
-  for (const item of cart) {
-    counts.set(item.size.id, (counts.get(item.size.id) ?? 0) + 1);
-  }
-
-  const itemPrices = cart.map((item) => {
-    const size = sizes.find((entry) => entry.id === item.size.id);
-    const qty = counts.get(item.size.id) ?? 1;
-    const unitPrice = size ? resolvePrice(size, qty) : 0;
-    return {
-      itemId: item.id,
-      unitPrice,
-    };
-  });
-
-  const subtotal = itemPrices.reduce((sum, item) => sum + item.unitPrice, 0);
-  return {
-    itemPrices: new Map(itemPrices.map((item) => [item.itemId, item.unitPrice] as const)),
-    subtotal,
-  };
 }
 
 async function loadPayPalSdk(clientId: string) {
@@ -82,8 +60,8 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
   const payPalTestModeMessage = getPayPalTestModeMessage(payPalEnvironment);
   const payPalUnavailableMessage = getPayPalUnavailableMessage(payPalEnvironment);
 
-  const pricing = useMemo(() => buildCartSummary(cart, sizes), [cart, sizes]);
-  const anyPriced = cart.some((item) => sizes.find((entry) => entry.id === item.size.id));
+  const pricing = useMemo(() => buildCartPricingSummary(cart, sizes), [cart, sizes]);
+  const anyPriced = pricing.hasPricedItems;
 
   useEffect(() => {
     let cancelled = false;
