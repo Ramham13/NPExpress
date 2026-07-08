@@ -5,6 +5,7 @@ import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
 import { useAdmin } from "@/context/AdminContext";
 import { getColorHex, getColorLabel, resolvePrice } from "@/lib/admin-store";
 import { summarizeCartItemText } from "@/lib/cart-item-summary";
+import { getPayPalTestModeMessage, getPayPalUnavailableMessage } from "@/lib/paypal-copy";
 import type { GuestInfo } from "./CheckoutGuest";
 
 interface Props {
@@ -76,7 +77,10 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
   const [sdkReady, setSdkReady] = useState(false);
   const { sizes, workflowSettings } = useAdmin();
   const payPalClientId = String(workflowSettings.sandboxPayPalClientId ?? "").trim();
+  const payPalEnvironment = String(workflowSettings.payPalEnvironment ?? "").trim();
   const paypalButtonRef = useRef<HTMLDivElement | null>(null);
+  const payPalTestModeMessage = getPayPalTestModeMessage(payPalEnvironment);
+  const payPalUnavailableMessage = getPayPalUnavailableMessage(payPalEnvironment);
 
   const pricing = useMemo(() => buildCartSummary(cart, sizes), [cart, sizes]);
   const anyPriced = cart.some((item) => sizes.find((entry) => entry.id === item.size.id));
@@ -331,16 +335,16 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
               {" "}will be captured immediately through PayPal and then handed to our operations workflow for review and fulfillment.
             </p>
 
-            <div className="mb-4 flex items-start gap-2 rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2.5 text-xs text-amber-300">
-              <AlertTriangle size={13} className="mt-px flex-shrink-0 text-amber-400" />
-              <span>
-                <strong>Sandbox mode:</strong> this checkout uses your configured PayPal sandbox credentials. Test payments stay in PayPal sandbox and do not charge a live account.
-              </span>
-            </div>
+            {payPalClientId && payPalTestModeMessage && (
+              <div className="mb-4 flex items-start gap-2 rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2.5 text-xs text-amber-300">
+                <AlertTriangle size={13} className="mt-px flex-shrink-0 text-amber-400" />
+                <span>{payPalTestModeMessage}</span>
+              </div>
+            )}
 
             {!payPalClientId && (
               <div className="mb-4 rounded border border-rose-700/50 bg-rose-900/20 px-3 py-2.5 text-xs text-rose-300">
-                PayPal checkout is not available yet because no sandbox client ID is configured in the admin workflow settings.
+                {payPalUnavailableMessage}
               </div>
             )}
 
