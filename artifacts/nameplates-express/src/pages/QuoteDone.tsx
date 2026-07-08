@@ -3,6 +3,8 @@
  * Shown after the quote form is submitted.  No payment is taken.
  */
 import { CheckCircle, ArrowRight, FileText } from "lucide-react";
+import { useAdmin } from "@/context/AdminContext";
+import { resolveSupportEmail } from "@/lib/support-email";
 import type { GuestInfo } from "./CheckoutGuest";
 import type { CartItem } from "@/lib/plate-utils";
 
@@ -34,7 +36,9 @@ function handoffMessage(handoffState: Props["handoffState"]) {
 }
 
 export default function QuoteDone({ orderNumber, guestInfo, cart, handoffState, onNewOrder }: Props) {
+  const { workflowSettings } = useAdmin();
   const handoff = handoffMessage(handoffState);
+  const supportEmail = resolveSupportEmail(workflowSettings.supportEmail);
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
       <div className="flex-1 overflow-y-auto">
@@ -135,7 +139,7 @@ export default function QuoteDone({ orderNumber, guestInfo, cart, handoffState, 
             </button>
             <p className="text-xs text-slate-500">
               Questions? Email{" "}
-              <strong className="text-slate-400">info@nameplatesexpress.com</strong>
+              <strong className="text-slate-400">{supportEmail}</strong>
             </p>
           </div>
 

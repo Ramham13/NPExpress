@@ -59,6 +59,7 @@ describe("admin config routes", () => {
           },
         ],
         workflowSettings: {
+          supportEmail: "orders@example.com",
           webhookEnabled: true,
           n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
           n8nCallbackSecret: "secret-value",
@@ -71,6 +72,7 @@ describe("admin config routes", () => {
     expect(saveResponse.status).toBe(200);
     expect(getTableRows(adminConfigTable)).toHaveLength(1);
     expect(getTableRows(adminConfigTable)[0]?.workflowSettings).toMatchObject({
+      supportEmail: "orders@example.com",
       webhookEnabled: true,
       n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
       n8nCallbackSecret: "secret-value",
@@ -85,6 +87,7 @@ describe("admin config routes", () => {
       configured: true,
       sizes: expect.any(Array),
       workflowSettings: {
+        supportEmail: "orders@example.com",
         webhookEnabled: true,
         sandboxPayPalClientId: "paypal-client-id",
         payPalEnvironment: "sandbox",
@@ -100,6 +103,7 @@ describe("admin config routes", () => {
       .set(adminHeaders());
     expect(authedResponse.status).toBe(200);
     expect(authedResponse.body.workflowSettings).toMatchObject({
+      supportEmail: "orders@example.com",
       webhookEnabled: true,
       n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
       n8nCallbackSecret: "secret-value",

@@ -7,12 +7,14 @@ describe("admin config schema", () => {
       configured: true,
       sizes: [],
       workflowSettings: {
+        supportEmail: "orders@example.com",
         n8nOrdersWebhookUrl: "http://example.test/webhook/orders",
         n8nCallbackSecret: "secret-value",
         webhookEnabled: true,
       },
     };
 
+    expect(GetAdminConfigResponse.parse(payload).workflowSettings.supportEmail).toBe("orders@example.com");
     expect(GetAdminConfigResponse.parse(payload).workflowSettings.n8nOrdersWebhookUrl).toBe(
       "http://example.test/webhook/orders",
     );

@@ -1,7 +1,15 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import QuoteDone from "@/pages/QuoteDone";
 import type { GuestInfo } from "@/pages/CheckoutGuest";
+
+vi.mock("@/context/AdminContext", () => ({
+  useAdmin: () => ({
+    workflowSettings: {
+      supportEmail: "orders@example.com",
+    },
+  }),
+}));
 
 function guestInfo(): GuestInfo {
   return {
@@ -43,5 +51,19 @@ describe("QuoteDone", () => {
     expect(screen.getByText("Order Reference")).toBeInTheDocument();
     expect(screen.getByText("NX-2026-ABC123")).toBeInTheDocument();
     expect(screen.getByText("Save this number for your records")).toBeInTheDocument();
+  });
+
+  it("uses the configured support email in the closing customer help copy", () => {
+    render(
+      <QuoteDone
+        orderNumber="NX-2026-ABC123"
+        guestInfo={guestInfo()}
+        cart={[]}
+        handoffState="sent"
+        onNewOrder={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("orders@example.com")).toBeInTheDocument();
   });
 });

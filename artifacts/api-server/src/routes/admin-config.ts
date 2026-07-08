@@ -7,9 +7,15 @@ import { getPublicPayPalSettings } from "../lib/paypal";
 
 const router: IRouter = Router();
 
+const DEFAULT_SUPPORT_EMAIL = "info@nameplatesexpress.com";
+
 function sanitizeWorkflowSettings(workflowSettings: unknown) {
   const settings = workflowSettings as Record<string, unknown> | null | undefined;
+  const supportEmail = typeof settings?.supportEmail === "string" && settings.supportEmail.trim()
+    ? settings.supportEmail.trim()
+    : DEFAULT_SUPPORT_EMAIL;
   return {
+    supportEmail,
     webhookEnabled: typeof settings?.webhookEnabled === "boolean" ? settings.webhookEnabled : false,
     ...getPublicPayPalSettings(settings ?? {}),
   };

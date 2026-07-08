@@ -358,6 +358,7 @@ function AdminPageInner() {
   const [errors, setErrors]       = useState<Partial<Record<string, string>>>({});
   const [deleteId, setDeleteId]   = useState<string | null>(null);
   const [workflowForm, setWorkflowForm] = useState({
+    supportEmail: String(workflowSettings.supportEmail ?? ""),
     n8nOrdersWebhookUrl: String(workflowSettings.n8nOrdersWebhookUrl ?? ""),
     n8nCallbackSecret: String(workflowSettings.n8nCallbackSecret ?? ""),
     n8nSharedSecret: String(workflowSettings.n8nSharedSecret ?? ""),
@@ -368,6 +369,7 @@ function AdminPageInner() {
 
   useEffect(() => {
     setWorkflowForm({
+      supportEmail: String(workflowSettings.supportEmail ?? ""),
       n8nOrdersWebhookUrl: String(workflowSettings.n8nOrdersWebhookUrl ?? ""),
       n8nCallbackSecret: String(workflowSettings.n8nCallbackSecret ?? ""),
       n8nSharedSecret: String(workflowSettings.n8nSharedSecret ?? ""),
@@ -726,6 +728,9 @@ function AdminPageInner() {
               <p className="text-sm text-slate-500 mt-1">Stored locally in the admin config record.</p>
             </div>
             <div className="space-y-3">
+              <Field label="Support Email">
+                <input className={INP} value={workflowForm.supportEmail} onChange={e => setWorkflowForm(p => ({ ...p, supportEmail: e.target.value }))} />
+              </Field>
               <Field label="n8n Orders Webhook URL">
                 <input className={INP} value={workflowForm.n8nOrdersWebhookUrl} onChange={e => setWorkflowForm(p => ({ ...p, n8nOrdersWebhookUrl: e.target.value }))} />
               </Field>

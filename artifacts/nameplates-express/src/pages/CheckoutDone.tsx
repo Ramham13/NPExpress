@@ -6,6 +6,8 @@ import { CheckCircle, ArrowRight, Package } from "lucide-react";
 import PlateFinalPreview from "@/components/PlateFinalPreview";
 import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
 import { getColorHex } from "@/lib/admin-store";
+import { useAdmin } from "@/context/AdminContext";
+import { resolveSupportEmail } from "@/lib/support-email";
 import type { GuestInfo } from "./CheckoutGuest";
 
 interface Props {
@@ -36,8 +38,10 @@ function handoffMessage(handoffState: Props["handoffState"]) {
 }
 
 export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffState, onNewOrder }: Props) {
+  const { workflowSettings } = useAdmin();
   const shipTo = [guestInfo.city, guestInfo.state].filter(Boolean).join(", ");
   const handoff = handoffMessage(handoffState);
+  const supportEmail = resolveSupportEmail(workflowSettings.supportEmail);
 
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
@@ -129,7 +133,7 @@ export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffStat
             </button>
             <p className="text-xs text-slate-500">
               Questions? Email{" "}
-              <strong className="text-slate-400">info@nameplatesexpress.com</strong>
+              <strong className="text-slate-400">{supportEmail}</strong>
             </p>
           </div>
 
