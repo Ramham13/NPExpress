@@ -17,6 +17,9 @@ describe("admin config routes", () => {
   beforeEach(() => {
     resetMockDb();
     process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
+    delete process.env.N8N_ORDERS_WEBHOOK_URL;
+    delete process.env.N8N_CALLBACK_SECRET;
+    delete process.env.N8N_SHARED_SECRET;
   });
 
   it("rejects invalid unlock requests and returns a token for the configured password only", async () => {
@@ -129,7 +132,7 @@ describe("admin config routes", () => {
       .send({
         sizes: [],
         workflowSettings: {
-          webhookEnabled: true,
+          webhookEnabled: false,
           sandboxPayPalClientId: "paypal-client-id",
         },
       })
@@ -140,5 +143,85 @@ describe("admin config routes", () => {
       .set(ADMIN_HEADER_NAME, "not-a-valid-token");
     expect(badTokenResponse.status).toBe(401);
     expect(badTokenResponse.body).toEqual({ error: "Unauthorized" });
+  });
+
+  it("rejects webhook-enabled saves that are missing the n8n webhook url", async () => {
+    const response = await request(app)
+      .put("/api/admin/config")
+      .set(adminHeaders())
+      .send({
+        sizes: [],
+        workflowSettings: {
+          webhookEnabled: true,
+          n8nCallbackSecret: "callback-secret",
+          n8nSharedSecret: "delivery-secret",
+        },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "Add the n8n orders webhook URL before enabling outbound webhook delivery.",
+    });
+    expect(getTableRows(adminConfigTable)).toHaveLength(0);
+  });
+
+  it("rejects webhook-enabled saves that use an invalid webhook url", async () => {
+    const response = await request(app)
+      .put("/api/admin/config")
+      .set(adminHeaders())
+      .send({
+        sizes: [],
+        workflowSettings: {
+          webhookEnabled: true,
+          n8nOrdersWebhookUrl: "ftp://n8n.internal/orders",
+          n8nCallbackSecret: "callback-secret",
+          n8nSharedSecret: "delivery-secret",
+        },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "The n8n orders webhook URL must start with http:// or https://.",
+    });
+    expect(getTableRows(adminConfigTable)).toHaveLength(0);
+  });
+
+  it("rejects webhook-enabled saves that are missing the callback secret", async () => {
+    const response = await request(app)
+      .put("/api/admin/config")
+      .set(adminHeaders())
+      .send({
+        sizes: [],
+        workflowSettings: {
+          webhookEnabled: true,
+          n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
+          n8nSharedSecret: "delivery-secret",
+        },
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "Add the n8n callback secret before enabling outbound webhook delivery.",
+    });
+    expect(getTableRows(adminConfigTable)).toHaveLength(0);
+  });
+
+  it("allows webhook-enabled saves when the required values come from environment fallbacks", async () => {
+    process.env.N8N_ORDERS_WEBHOOK_URL = "https://env.example/webhook/orders";
+    process.env.N8N_CALLBACK_SECRET = "env-callback-secret";
+    process.env.N8N_SHARED_SECRET = "env-shared-secret";
+
+    const response = await request(app)
+      .put("/api/admin/config")
+      .set(adminHeaders())
+      .send({
+        sizes: [],
+        workflowSettings: {
+          webhookEnabled: true,
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(getTableRows(adminConfigTable)).toHaveLength(1);
   });
 });

@@ -30,6 +30,14 @@ function isUnauthorizedError(err: unknown) {
   return typeof err === "object" && err !== null && "status" in err && (err as { status?: unknown }).status === 401;
 }
 
+function getApiErrorMessage(err: unknown) {
+  if (typeof err !== "object" || err === null || !("data" in err)) return null;
+  const data = (err as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null || !("error" in data)) return null;
+  const message = (data as { error?: unknown }).error;
+  return typeof message === "string" && message.trim() ? message : null;
+}
+
 function clearAdminSession() {
   sessionStorage.removeItem(ADMIN_KEY_SESSION_STORAGE);
   sessionStorage.removeItem("nx_admin_unlocked");
@@ -96,7 +104,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       console.error("[AdminContext] Failed to persist config to server:", err);
       if (persistSequence.current === sequence) {
         setSaveStatus("error");
-        setSaveError("We couldn't save the admin configuration. Check the server and try again.");
+        setSaveError(getApiErrorMessage(err) ?? "We couldn't save the admin configuration. Check the server and try again.");
       }
     }
   }, []);

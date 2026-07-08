@@ -139,6 +139,8 @@ Configure workflow values either through the admin page or environment defaults:
 
 The admin configuration is the preferred local testing path because it is persisted in PostgreSQL and read by the backend sender. Environment values act as fallback defaults. Public callers only receive safe workflow fields such as `webhookEnabled` and the sandbox PayPal client ID; secrets remain available only to unlocked admin sessions.
 
+When outbound webhook delivery is enabled, the admin config API validates that the effective n8n webhook URL and callback or shared-secret requirements are satisfied before saving. Invalid webhook-enabled saves now fail fast with a clear `400` response instead of waiting for an order handoff to discover the misconfiguration.
+
 See [docs/N8N_INTEGRATION.md](docs/N8N_INTEGRATION.md) for the webhook payload, callback contract, and recommended n8n workflow shape.
 
 ## Admin Configuration
@@ -156,6 +158,8 @@ The admin page manages:
 - n8n webhook URL
 - n8n callback secret
 - n8n shared secret used for outbound delivery-token signing
+
+Webhook-enabled workflow settings are validated at save time so the admin page cannot silently persist an underconfigured n8n handoff state.
 
 The admin page no longer exposes a reset-to-defaults button because long-term deployments should treat product configuration as persistent data, not disposable seed state.
 

@@ -4,6 +4,7 @@ import { db, adminConfigTable } from "@workspace/db";
 import { GetAdminConfigResponse, PutAdminConfigBody, PutAdminConfigResponse } from "@workspace/api-zod";
 import { getAdminTokenFromRequest, getAdminPassword, isAdminTokenValid, requireAdminAccess } from "../lib/admin-auth";
 import { getPublicPayPalSettings } from "../lib/paypal";
+import { validateWorkflowSettingsForSave } from "../lib/workflow-settings";
 
 const router: IRouter = Router();
 
@@ -54,6 +55,12 @@ router.put("/admin/config", async (req, res) => {
 
   try {
     const body = PutAdminConfigBody.parse(req.body);
+    const workflowSettings = (body.workflowSettings ?? {}) as Record<string, unknown>;
+    const workflowSettingsError = validateWorkflowSettingsForSave(workflowSettings);
+    if (workflowSettingsError) {
+      res.status(400).json({ error: workflowSettingsError });
+      return;
+    }
     const rows = await db.select({ id: adminConfigTable.id }).from(adminConfigTable).limit(1);
     const existing = rows[0];
 
@@ -61,14 +68,14 @@ router.put("/admin/config", async (req, res) => {
     if (existing) {
       const result = await db
         .update(adminConfigTable)
-        .set({ sizes: body.sizes, workflowSettings: body.workflowSettings ?? {} })
+        .set({ sizes: body.sizes, workflowSettings })
         .where(eq(adminConfigTable.id, existing.id))
         .returning();
       updated = result[0];
     } else {
       const result = await db
         .insert(adminConfigTable)
-        .values({ sizes: body.sizes, workflowSettings: body.workflowSettings ?? {} })
+        .values({ sizes: body.sizes, workflowSettings })
         .returning();
       updated = result[0];
     }

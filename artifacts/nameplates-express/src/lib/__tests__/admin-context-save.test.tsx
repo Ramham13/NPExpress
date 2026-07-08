@@ -94,4 +94,30 @@ describe("AdminProvider save feedback", () => {
     await screen.findByText("error");
     expect(screen.getByText("We couldn't save the admin configuration. Check the server and try again.")).toBeInTheDocument();
   });
+
+  it("surfaces validation errors returned by the admin config API", async () => {
+    putAdminConfigMock.mockRejectedValueOnce(
+      {
+        status: 400,
+        data: {
+          error: "Add the n8n orders webhook URL before enabling outbound webhook delivery.",
+        },
+      },
+    );
+
+    render(
+      <AdminProvider>
+        <SaveProbe />
+      </AdminProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getAdminConfigMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save workflow" }));
+
+    await screen.findByText("error");
+    expect(screen.getByText("Add the n8n orders webhook URL before enabling outbound webhook delivery.")).toBeInTheDocument();
+  });
 });
