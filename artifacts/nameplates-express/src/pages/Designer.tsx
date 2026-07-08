@@ -1154,9 +1154,10 @@ function CustomizePanel({
         {cartCount > 0 && (
           <button
             onClick={onViewCart}
+            aria-label={`Review order summary (${cartCount} item${cartCount !== 1 ? "s" : ""})`}
             className="w-full text-center text-[11px] text-muted-foreground hover:text-primary transition-colors"
           >
-            View order &mdash; {cartCount} item{cartCount !== 1 ? "s" : ""} &rarr;
+            Review order summary &mdash; {cartCount} item{cartCount !== 1 ? "s" : ""} &rarr;
           </button>
         )}
       </div>

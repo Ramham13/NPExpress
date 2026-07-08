@@ -48,4 +48,14 @@ describe("Designer cart button", () => {
     const cartButton = screen.getByRole("button", { name: "View order" });
     expect(cartButton).toHaveAttribute("title", "View order");
   });
+
+  it("keeps the primary cart action distinct from the secondary order-summary shortcut", () => {
+    render(<Designer />);
+
+    fireEvent.click(screen.getByTestId("button-size-6x2"));
+    fireEvent.click(screen.getByTestId("button-add-to-cart"));
+
+    expect(screen.getByRole("button", { name: "View order (1 item)" })).toHaveAttribute("title", "View order");
+    expect(screen.getByRole("button", { name: "Review order summary (1 item)" })).toBeInTheDocument();
+  });
 });
