@@ -12,6 +12,7 @@ This document summarizes the current deployment-readiness picture for Nameplates
 - PayPal orders are created, captured, and verified on the server before a paid order is finalized locally.
 - Repeating the same PayPal capture finalization returns the existing order instead of creating a duplicate paid record.
 - Public admin config responses keep secrets hidden while still exposing the safe PayPal client ID needed by the customer checkout screen.
+- The current Windows shell runtime on this machine now runs Node.js `20.20.2` with `pnpm 10.15.0`, and the documented PowerShell install/test commands have been revalidated.
 
 ## Remaining Deployment Cautions
 
@@ -21,11 +22,7 @@ These are not currently tracked as open blocking code issues in the local Gitea 
    - You need real n8n webhook values, callback/shared secrets, and email automation on the destination workflow.
    - You need live PayPal credentials and a live verification pass if moving beyond sandbox.
 
-2. The local shell on this machine is still running Node.js `20.14.0`.
-   - The workspace now enforces the supported baseline during install, but local shell builds still emit Vite engine warnings until the machine runtime is upgraded to Node `20.19+`, `22.12+`, or `24+`.
-   - The Docker build already uses a supported runtime, so the local Docker deployment path remains the reliable validation path here.
-
-3. Final operational acceptance is still environment-specific.
+2. Final operational acceptance is still environment-specific.
    - A real end-to-end order should be exercised against the intended local n8n instance, email destination, and PayPal sandbox accounts after configuration is entered in `/admin`.
 
 ## Recommended Release Gate

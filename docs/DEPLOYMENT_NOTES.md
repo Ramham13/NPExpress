@@ -66,7 +66,7 @@ Do not document or commit local Gitea credentials.
 Before deploying beyond local testing:
 
 1. Replace local development credentials with deployment-specific secrets and live infrastructure values.
-2. Upgrade the local non-Docker Node.js runtime if this machine will be used for direct shell builds instead of Docker-only validation.
+2. Confirm the local non-Docker Node.js runtime remains on a supported baseline if this machine will be used for direct shell builds instead of Docker-only validation.
 3. Validate database backups and restore behavior.
 4. Confirm n8n webhook timeout, retry, idempotency, and callback behavior against the real target workflow.
 5. Run automated tests from a clean install.
