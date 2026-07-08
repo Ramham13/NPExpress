@@ -98,6 +98,35 @@ describe("order workflow routes", () => {
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores client-paid invoice status during initial invoice finalization", async () => {
+    seedWorkflowSettings();
+    vi.mocked(fetch).mockResolvedValue(new Response("accepted", { status: 202 }));
+
+    const response = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "invoice",
+        paymentStatus: "paid",
+        customer: { name: "Jane Smith", email: "jane@example.com" },
+        cart: [{ id: "plate-1", size: { label: '6" x 2"' } }],
+      });
+
+    expect(response.status).toBe(202);
+
+    const [order] = getTableRows(orderTable);
+    expect(order).toMatchObject({
+      orderId: response.body.orderId,
+      paymentMethod: "invoice",
+      state: "n8n_sent",
+    });
+    expect(order.payload.orderState).toBe("invoiced");
+    expect(order.payload.payment).toMatchObject({
+      provider: "invoice",
+      status: "pending",
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to the callback secret for legacy admin configs without a shared secret", async () => {
     seedAdminConfig({
       sizes: [

@@ -507,7 +507,7 @@ router.post("/orders/finalize", async (req, res) => {
     const workflowSettings = await getWorkflowSettings();
     const pricing = buildCartPricing(body.cart, await getConfiguredSizes());
     const isPayPalOrder = body.paymentMethod === "paypal";
-    const isPaid = isPayPalOrder ? true : body.paymentStatus === "paid";
+    const isPaid = isPayPalOrder;
 
     let verifiedPayment: Awaited<ReturnType<typeof verifyPayPalOrder>> = null;
     if (isPayPalOrder) {

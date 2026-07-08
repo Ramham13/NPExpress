@@ -125,6 +125,8 @@ Supported lifecycle states include:
 
 The API persists a canonical order record before attempting any n8n handoff. Each outbound delivery attempt is logged with timestamps, attempt status, request metadata, response metadata, payload checksum, and confirmation state. Duplicate sends are blocked after n8n confirmation, and repeated PayPal capture finalization is treated as a safe duplicate instead of creating a second paid order.
 
+Invoice checkout does not self-declare payment complete during initial finalization. New invoice orders are persisted as `invoiced` with pending payment metadata, and later payment confirmation should move them to `paid` through the protected admin workflow.
+
 ## n8n Integration
 
 Configure workflow values either through the admin page or environment defaults:
