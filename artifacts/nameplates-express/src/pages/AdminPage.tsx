@@ -46,6 +46,34 @@ function getResponseErrorMessage(data: unknown): string | null {
   return typeof error === "string" && error.trim() ? error : null;
 }
 
+type OrderRecord = Record<string, unknown>;
+type OrderDetail = { order: OrderRecord; attempts: OrderRecord[] };
+
+function getOrderId(record: OrderRecord | null | undefined): string {
+  if (!record) return "";
+  return String(record.orderId ?? record.id ?? "");
+}
+
+function getOptionalString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function getNestedRecord(record: OrderRecord | null | undefined, key: string): OrderRecord | null {
+  if (!record) return null;
+  const value = record[key];
+  return typeof value === "object" && value !== null ? value as OrderRecord : null;
+}
+
+function formatDateTime(value: unknown): string | null {
+  if (!(typeof value === "string" || value instanceof Date)) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 // ─── AdminGate ────────────────────────────────────────────────────────────────
 
 function AdminGate({ children }: { children: React.ReactNode }) {
@@ -816,8 +844,12 @@ function AdminPageInner() {
 }
 
 export function RecentOrdersPanel() {
-  const [orders, setOrders] = useState<Array<Record<string, unknown>>>([]);
-  const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [selected, setSelected] = useState<OrderRecord | null>(null);
+  const [detail, setDetail] = useState<OrderDetail | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [assetBusy, setAssetBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -834,15 +866,74 @@ export function RecentOrdersPanel() {
     }
 
     const data = await response.json();
-    const nextOrders = Array.isArray(data.orders) ? data.orders as Array<Record<string, unknown>> : [];
+    const nextOrders = Array.isArray(data.orders) ? data.orders as OrderRecord[] : [];
     setOrders(nextOrders);
     setSelected((current) => {
       if (!current) {
         return current;
       }
-      const currentId = String(current.orderId ?? current.id ?? "");
-      return nextOrders.find((order) => String(order.orderId ?? order.id ?? "") === currentId) ?? null;
+      return nextOrders.find((order) => getOrderId(order) === getOrderId(current)) ?? null;
     });
+  }, []);
+
+  const loadOrderDetail = useCallback(async (orderId: string) => {
+    setDetailBusy(true);
+    setDetailError(null);
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, adminRequestOptions());
+      if (response.status === 401) {
+        window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
+        return;
+      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(data) ?? `Failed to load order details (${response.status})`);
+      }
+      setDetail({
+        order: typeof data.order === "object" && data.order !== null ? data.order as OrderRecord : {},
+        attempts: Array.isArray(data.attempts) ? data.attempts as OrderRecord[] : [],
+      });
+    } catch (err) {
+      setDetail(null);
+      setDetailError(err instanceof Error ? err.message : "Order details are unavailable right now.");
+    } finally {
+      setDetailBusy(false);
+    }
+  }, []);
+
+  const openOrderAsset = useCallback(async (orderId: string, assetPath: "proof.html" | "proof-package.json", label: string) => {
+    setAssetBusy(assetPath);
+    setError(null);
+    try {
+      const response = await fetch(`/api/orders/${orderId}/${assetPath}`, adminRequestOptions());
+      if (response.status === 401) {
+        window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
+        return;
+      }
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") ?? "";
+        let message = `Failed to open ${label.toLowerCase()} (${response.status})`;
+        if (contentType.includes("application/json")) {
+          const data = await response.json().catch(() => ({}));
+          message = getResponseErrorMessage(data) ?? message;
+        } else {
+          const text = await response.text();
+          if (text.trim()) {
+            message = text.trim();
+          }
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `The ${label.toLowerCase()} could not be opened.`);
+    } finally {
+      setAssetBusy(null);
+    }
   }, []);
 
   useEffect(() => {
@@ -865,6 +956,28 @@ export function RecentOrdersPanel() {
     };
   }, [loadOrders]);
 
+  useEffect(() => {
+    const orderId = getOrderId(selected);
+    if (!orderId) {
+      setDetail(null);
+      setDetailError(null);
+      return;
+    }
+    void loadOrderDetail(orderId);
+  }, [selected, loadOrderDetail]);
+
+  const selectedOrder = detail?.order ?? selected;
+  const selectedOrderId = getOrderId(selectedOrder);
+  const payload = getNestedRecord(selectedOrder, "payload");
+  const customer = getNestedRecord(payload, "customer");
+  const trackingNumber = getOptionalString(payload?.trackingNumber);
+  const carrier = getOptionalString(payload?.carrier);
+  const labelUrl = getOptionalString(payload?.labelUrl);
+  const paymentMethod = getOptionalString(payload?.paymentMethod);
+  const paymentStatus = getOptionalString(payload?.paymentStatus);
+  const createdAt = formatDateTime(selectedOrder?.createdAt);
+  const acknowledgedAt = formatDateTime(selectedOrder?.n8nAckReceivedAt);
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <h2 className="text-lg font-black text-slate-800">Recent Orders</h2>
@@ -880,8 +993,80 @@ export function RecentOrdersPanel() {
       </div>
       {selected && (
         <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm space-y-2">
-          <div className="font-semibold text-slate-800">Selected order: {String(selected.orderId ?? selected.id)}</div>
-          <div className="text-slate-500">State: {String(selected.state ?? "unknown")}</div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="font-semibold text-slate-800">Selected order: {selectedOrderId}</div>
+              <div className="text-slate-500">State: {String(selectedOrder?.state ?? "unknown")}</div>
+              {detailBusy ? <p className="text-xs text-slate-500">Loading protected order details...</p> : null}
+              {detailError ? <p className="text-xs text-amber-600">{detailError}</p> : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={assetBusy !== null || !selectedOrderId}
+                onClick={() => void openOrderAsset(selectedOrderId, "proof.html", "Proof document")}
+                className="rounded border border-slate-300 px-3 py-1.5 text-slate-700 text-xs font-semibold disabled:opacity-60"
+              >
+                {assetBusy === "proof.html" ? "Opening proof..." : "Open Proof Document"}
+              </button>
+              <button
+                type="button"
+                disabled={assetBusy !== null || !selectedOrderId}
+                onClick={() => void openOrderAsset(selectedOrderId, "proof-package.json", "Proof data package")}
+                className="rounded border border-slate-300 px-3 py-1.5 text-slate-700 text-xs font-semibold disabled:opacity-60"
+              >
+                {assetBusy === "proof-package.json" ? "Opening package..." : "Open Proof Data"}
+              </button>
+            </div>
+          </div>
+          {selectedOrder ? (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded border border-slate-200 bg-white px-3 py-2 text-xs">
+              <dt className="font-semibold text-slate-600">Customer</dt>
+              <dd className="text-slate-800">{getOptionalString(customer?.name) ?? "Unavailable"}</dd>
+              <dt className="font-semibold text-slate-600">Email</dt>
+              <dd className="text-slate-800">{getOptionalString(customer?.email) ?? "Unavailable"}</dd>
+              <dt className="font-semibold text-slate-600">Payment</dt>
+              <dd className="text-slate-800">{paymentMethod ?? "Unavailable"}</dd>
+              <dt className="font-semibold text-slate-600">Payment Status</dt>
+              <dd className="text-slate-800">{paymentStatus ?? "Unavailable"}</dd>
+              <dt className="font-semibold text-slate-600">Created</dt>
+              <dd className="text-slate-800">{createdAt ?? "Unavailable"}</dd>
+              <dt className="font-semibold text-slate-600">n8n Acknowledged</dt>
+              <dd className="text-slate-800">{acknowledgedAt ?? "Not yet confirmed"}</dd>
+              <dt className="font-semibold text-slate-600">Tracking</dt>
+              <dd className="text-slate-800">
+                {trackingNumber
+                  ? `${trackingNumber}${carrier ? ` (${carrier})` : ""}`
+                  : "Not provided"}
+              </dd>
+              <dt className="font-semibold text-slate-600">Label URL</dt>
+              <dd className="break-all text-slate-800">{labelUrl ?? "Not provided"}</dd>
+            </dl>
+          ) : null}
+          <div className="rounded border border-slate-200 bg-white px-3 py-2">
+            <div className="font-semibold text-slate-800">Delivery Attempts</div>
+            {!detail && !detailBusy ? (
+              <p className="mt-1 text-xs text-slate-500">Select an order to load its delivery audit trail.</p>
+            ) : detail?.attempts.length ? (
+              <div className="mt-2 space-y-2">
+                {detail.attempts.map((attempt) => (
+                  <div key={String(attempt.id ?? `${attempt.attemptNumber ?? "?"}-${attempt.createdAt ?? ""}`)} className="rounded border border-slate-200 px-2.5 py-2 text-xs">
+                    <div className="font-semibold text-slate-700">
+                      Attempt #{String(attempt.attemptNumber ?? "?")} - {String(attempt.confirmationState ?? "unknown")}
+                    </div>
+                    <div className="mt-1 text-slate-500">
+                      Request: {String(attempt.requestStatus ?? "unknown")} | Response: {String(attempt.responseStatus ?? "pending")}
+                    </div>
+                    <div className="text-slate-500">
+                      Started: {formatDateTime(attempt.createdAt) ?? "Unavailable"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">No delivery attempts have been recorded yet.</p>
+            )}
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
