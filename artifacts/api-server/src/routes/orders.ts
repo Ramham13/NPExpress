@@ -13,6 +13,7 @@ import {
   verifyPayPalOrder,
   type WorkflowSettings,
 } from "../lib/paypal";
+import { getPublicPayPalUnavailableMessage } from "../lib/paypal-copy";
 import { requireAdminAccess } from "../lib/admin-auth";
 
 const router: IRouter = Router();
@@ -436,7 +437,7 @@ router.post("/paypal/orders", async (req, res) => {
     const workflowSettings = await getWorkflowSettings();
     const payPalConfig = getPayPalConfig(workflowSettings);
     if (!payPalConfig) {
-      res.status(409).json({ error: "PayPal sandbox credentials are not configured" });
+      res.status(409).json({ error: getPublicPayPalUnavailableMessage() });
       return;
     }
 
@@ -476,7 +477,7 @@ router.post("/paypal/orders/:orderId/capture", async (req, res) => {
     const workflowSettings = await getWorkflowSettings();
     const payPalConfig = getPayPalConfig(workflowSettings);
     if (!payPalConfig) {
-      res.status(409).json({ error: "PayPal sandbox credentials are not configured" });
+      res.status(409).json({ error: getPublicPayPalUnavailableMessage() });
       return;
     }
 
@@ -528,7 +529,7 @@ router.post("/orders/finalize", async (req, res) => {
 
       const payPalConfig = getPayPalConfig(workflowSettings);
       if (!payPalConfig) {
-        res.status(409).json({ error: "PayPal sandbox credentials are not configured" });
+        res.status(409).json({ error: getPublicPayPalUnavailableMessage() });
         return;
       }
 

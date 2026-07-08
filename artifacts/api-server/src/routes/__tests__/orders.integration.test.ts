@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import app from "../../app";
 import { ADMIN_HEADER_NAME } from "../../lib/admin-auth";
 import { signAdminToken } from "../../lib/admin-token";
+import { getPublicPayPalUnavailableMessage } from "../../lib/paypal-copy";
 import {
   getTableRows,
   orderDeliveryAttemptTable,
@@ -263,6 +264,101 @@ describe("order workflow routes", () => {
       subtotal: 5.5,
     });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(7);
+  });
+
+  it("returns customer-safe PayPal config errors when order creation is unavailable", async () => {
+    seedAdminConfig({
+      sizes: [
+        {
+          id: "6x2",
+          label: '6" x 2"',
+          basePrice: 5.5,
+          pricingTiers: [{ minQty: 10, priceEach: 4.95 }],
+        },
+      ],
+      workflowSettings: {
+        webhookEnabled: true,
+        n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
+        n8nCallbackSecret: "callback-secret",
+        n8nSharedSecret: "delivery-secret",
+        sandboxPayPalClientId: "paypal-client-id",
+      },
+    });
+
+    const response = await request(app)
+      .post("/api/paypal/orders")
+      .send({
+        cart: [{ id: "plate-1", size: { id: "6x2", label: '6\" x 2\"' } }],
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: getPublicPayPalUnavailableMessage(),
+    });
+  });
+
+  it("returns customer-safe PayPal config errors when capture is unavailable", async () => {
+    seedAdminConfig({
+      sizes: [
+        {
+          id: "6x2",
+          label: '6" x 2"',
+          basePrice: 5.5,
+          pricingTiers: [{ minQty: 10, priceEach: 4.95 }],
+        },
+      ],
+      workflowSettings: {
+        webhookEnabled: true,
+        n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
+        n8nCallbackSecret: "callback-secret",
+        n8nSharedSecret: "delivery-secret",
+        sandboxPayPalClientId: "paypal-client-id",
+      },
+    });
+
+    const response = await request(app)
+      .post("/api/paypal/orders/PAYPAL-ORDER-1/capture")
+      .send({});
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: getPublicPayPalUnavailableMessage(),
+    });
+  });
+
+  it("returns customer-safe PayPal config errors when paid finalization cannot verify checkout", async () => {
+    seedAdminConfig({
+      sizes: [
+        {
+          id: "6x2",
+          label: '6" x 2"',
+          basePrice: 5.5,
+          pricingTiers: [{ minQty: 10, priceEach: 4.95 }],
+        },
+      ],
+      workflowSettings: {
+        webhookEnabled: true,
+        n8nOrdersWebhookUrl: "https://n8n.internal/webhook/orders",
+        n8nCallbackSecret: "callback-secret",
+        n8nSharedSecret: "delivery-secret",
+        sandboxPayPalClientId: "paypal-client-id",
+      },
+    });
+
+    const response = await request(app)
+      .post("/api/orders/finalize")
+      .send({
+        paymentMethod: "paypal",
+        customer: { name: "Jane Smith", email: "jane@example.com" },
+        cart: [{ id: "plate-1", size: { id: "6x2", label: '6\" x 2\"' } }],
+        paypalOrderId: "PAYPAL-ORDER-1",
+        paypalCaptureId: "CAPTURE-123",
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: getPublicPayPalUnavailableMessage(),
+    });
   });
 
   it("rejects paid PayPal finalization when the server cannot verify the capture", async () => {
