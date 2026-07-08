@@ -39,6 +39,9 @@ This repository is the isolated local mirror and Docker test environment. The cu
 
 2. Edit `docker/.env.local` for the local machine. Keep this file private; it is ignored by git.
 
+   - The admin page remains the preferred place to persist workflow and PayPal sandbox settings for local testing.
+   - The example env file also includes supported fallback values for n8n and PayPal when you want the container to boot with those settings already present.
+
 3. Build and start the stack:
 
    ```powershell
