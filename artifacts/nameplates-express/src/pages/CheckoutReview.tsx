@@ -6,7 +6,7 @@ import { useAdmin } from "@/context/AdminContext";
 import { getColorHex, getColorLabel } from "@/lib/admin-store";
 import { summarizeCartItemText } from "@/lib/cart-item-summary";
 import { buildCartPricingSummary } from "@/lib/cart-pricing";
-import { getPayPalTestModeMessage, getPayPalUnavailableMessage } from "@/lib/paypal-copy";
+import { getCustomerFacingPayPalErrorMessage, getPayPalTestModeMessage, getPayPalUnavailableMessage } from "@/lib/paypal-copy";
 import type { GuestInfo } from "./CheckoutGuest";
 
 interface Props {
@@ -127,7 +127,7 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
                 paypalCaptureId: capture.captureId,
               });
             } catch (err) {
-              setError(err instanceof Error ? err.message : "PayPal capture failed");
+              setError(getCustomerFacingPayPalErrorMessage(err));
               setBusy(false);
             }
           },
@@ -137,7 +137,7 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
           },
           onError: (err) => {
             setBusy(false);
-            setError(err instanceof Error ? err.message : "PayPal checkout failed");
+            setError(getCustomerFacingPayPalErrorMessage(err));
           },
         }).render(paypalButtonRef.current);
 
@@ -146,7 +146,7 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to initialize PayPal checkout");
+          setError(getCustomerFacingPayPalErrorMessage(err));
         }
       } finally {
         if (!cancelled) {
