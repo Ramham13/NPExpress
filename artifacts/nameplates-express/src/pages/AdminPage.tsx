@@ -40,6 +40,12 @@ function getErrorStatus(err: unknown): number | null {
   return typeof status === "number" ? status : null;
 }
 
+function getResponseErrorMessage(data: unknown): string | null {
+  if (typeof data !== "object" || data === null || !("error" in data)) return null;
+  const error = (data as { error?: unknown }).error;
+  return typeof error === "string" && error.trim() ? error : null;
+}
+
 // ─── AdminGate ────────────────────────────────────────────────────────────────
 
 function AdminGate({ children }: { children: React.ReactNode }) {
@@ -894,18 +900,18 @@ export function RecentOrdersPanel() {
                     window.dispatchEvent(new Event(ADMIN_AUTH_EXPIRED_EVENT));
                     return;
                   }
+                  const data = await response.json().catch(() => ({}));
                   if (!response.ok) {
-                    throw new Error(`Retry failed (${response.status})`);
+                    throw new Error(getResponseErrorMessage(data) ?? `Retry failed (${response.status})`);
                   }
-                  const data = await response.json();
                   await loadOrders();
                   setNotice(
                     data.duplicate
                       ? `Order ${orderId} was already confirmed; no retry was needed.`
                       : `Retry attempt ${String(data.attemptNumber ?? "?")} started for ${orderId}.`,
                   );
-                } catch {
-                  setError("The n8n retry could not be started.");
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "The n8n retry could not be started.");
                 } finally {
                   setBusy(false);
                 }

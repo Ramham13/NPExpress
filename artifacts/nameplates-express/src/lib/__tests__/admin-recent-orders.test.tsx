@@ -43,4 +43,22 @@ describe("RecentOrdersPanel", () => {
     expect(screen.getByText("Retry attempt 2 started for NX-2026-ABC123.")).toBeInTheDocument();
     expect(vi.mocked(fetch)).toHaveBeenNthCalledWith(3, "/api/orders", expect.any(Object));
   });
+
+  it("shows the backend retry error when the handoff configuration is missing", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        orders: [{ orderId: "NX-2026-ABC123", state: "n8n_failed" }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: "n8n shared secret is not configured",
+      }), { status: 409 }));
+
+    render(<RecentOrdersPanel />);
+
+    await screen.findByRole("button", { name: /NX-2026-ABC123/i });
+    fireEvent.click(screen.getByRole("button", { name: /NX-2026-ABC123/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Retry n8n/i }));
+
+    await screen.findByText("n8n shared secret is not configured");
+  });
 });
