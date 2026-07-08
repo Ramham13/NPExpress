@@ -9,6 +9,7 @@ import {
   computeHZones, computeVZones, type CartItem,
 } from "@/lib/plate-utils";
 import { getColorHex, getColorLabel } from "@/lib/admin-store";
+import { summarizeCartItemText } from "@/lib/cart-item-summary";
 
 interface Props {
   cart: CartItem[];
@@ -17,16 +18,6 @@ interface Props {
   onClearAll: () => void;
   onCheckout: () => void;
   onQuote: () => void;
-}
-
-function textSummary(item: CartItem): string {
-  const zones = item.direction === "horizontal"
-    ? computeHZones(item.heights)
-    : computeVZones(item.widths);
-  return zones
-    .map((z) => item.lineConfigs[z.id]?.text)
-    .filter(Boolean)
-    .join(" · ") || "(no text)";
 }
 
 export default function CartView({ cart, onBack, onRemove, onClearAll, onCheckout, onQuote }: Props) {
@@ -229,7 +220,7 @@ function CartRow({ item, label, price, onRemove }: {
       {/* Details */}
       <div className="flex-1 min-w-0">
         <p className="text-xs text-slate-500 mb-0.5">{label}</p>
-        <p className="text-sm font-semibold text-slate-200 truncate">{textSummary(item)}</p>
+        <p className="text-sm font-semibold text-slate-200 truncate">{summarizeCartItemText(item)}</p>
         <div className="flex items-center gap-3 mt-1 flex-wrap">
           <p className="text-xs text-slate-500">
             {item.size.label} · {item.direction} · {zones.length} zone{zones.length !== 1 ? "s" : ""}

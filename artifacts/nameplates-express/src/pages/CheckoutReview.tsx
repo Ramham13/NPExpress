@@ -4,6 +4,7 @@ import PlateFinalPreview from "@/components/PlateFinalPreview";
 import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
 import { useAdmin } from "@/context/AdminContext";
 import { getColorHex, getColorLabel, resolvePrice } from "@/lib/admin-store";
+import { summarizeCartItemText } from "@/lib/cart-item-summary";
 import type { GuestInfo } from "./CheckoutGuest";
 
 interface Props {
@@ -11,13 +12,6 @@ interface Props {
   guestInfo: GuestInfo;
   onBack: () => void;
   onPaid: (payment: { paypalOrderId: string; paypalCaptureId: string }) => Promise<void>;
-}
-
-function cartTextSummary(item: CartItem): string {
-  const zones = item.direction === "horizontal"
-    ? computeHZones(item.heights)
-    : computeVZones(item.widths);
-  return zones.map((zone) => item.lineConfigs[zone.id]?.text).filter(Boolean).join(" · ") || "(no text)";
 }
 
 function AddrLines({ lines }: { lines: (string | undefined)[] }) {
@@ -246,7 +240,7 @@ export default function CheckoutReview({ cart, guestInfo, onBack, onPaid }: Prop
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="mb-0.5 text-xs text-slate-500">Item {index + 1}</p>
-                      <p className="truncate text-sm font-semibold text-slate-200">{cartTextSummary(item)}</p>
+                      <p className="truncate text-sm font-semibold text-slate-200">{summarizeCartItemText(item)}</p>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {item.size.label} · {item.direction} · {zones.length} zone{zones.length !== 1 ? "s" : ""}
                       </p>
