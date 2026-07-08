@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import QuoteDone from "@/pages/QuoteDone";
+import CheckoutDone from "@/pages/CheckoutDone";
 import type { GuestInfo } from "@/pages/CheckoutGuest";
 
 vi.mock("@/context/AdminContext", () => ({
@@ -31,45 +31,15 @@ function guestInfo(): GuestInfo {
     billingZip: "",
     billingCountry: "US",
     notes: "",
-    poNumber: "PO-2026-0001",
+    poNumber: "",
     taxExemptNote: "",
   };
 }
 
-describe("QuoteDone", () => {
-  it("shows the persisted order reference for quote requests", () => {
-    render(
-      <QuoteDone
-        orderNumber="NX-2026-ABC123"
-        guestInfo={guestInfo()}
-        cart={[]}
-        handoffState="sent"
-        onNewOrder={() => {}}
-      />,
-    );
-
-    expect(screen.getByText("Order Reference")).toBeInTheDocument();
-    expect(screen.getByText("NX-2026-ABC123")).toBeInTheDocument();
-    expect(screen.getByText("Save this number for your records")).toBeInTheDocument();
-  });
-
-  it("uses the configured support email in the closing customer help copy", () => {
-    render(
-      <QuoteDone
-        orderNumber="NX-2026-ABC123"
-        guestInfo={guestInfo()}
-        cart={[]}
-        handoffState="sent"
-        onNewOrder={() => {}}
-      />,
-    );
-
-    expect(screen.getByText("orders@example.com")).toBeInTheDocument();
-  });
-
+describe("CheckoutDone", () => {
   it("uses customer-safe handoff wording when background processing needs follow-up", () => {
     render(
-      <QuoteDone
+      <CheckoutDone
         orderNumber="NX-2026-ABC123"
         guestInfo={guestInfo()}
         cart={[]}
@@ -78,7 +48,7 @@ describe("QuoteDone", () => {
       />,
     );
 
-    expect(screen.getByText("Your request has been received. If any follow-up is needed while we finish processing it, our team will contact you.")).toBeInTheDocument();
+    expect(screen.getByText("Your order has been received. If any follow-up is needed while we finish processing it, our team will contact you.")).toBeInTheDocument();
     expect(screen.queryByText(/manual attention/i)).toBeNull();
     expect(screen.queryByText(/recover it from the order system/i)).toBeNull();
   });

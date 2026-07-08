@@ -7,6 +7,7 @@ import PlateFinalPreview from "@/components/PlateFinalPreview";
 import { computeHZones, computeVZones, type CartItem } from "@/lib/plate-utils";
 import { getColorHex } from "@/lib/admin-store";
 import { useAdmin } from "@/context/AdminContext";
+import { getCheckoutHandoffMessage } from "@/lib/order-handoff-copy";
 import { resolveSupportEmail } from "@/lib/support-email";
 import type { GuestInfo } from "./CheckoutGuest";
 
@@ -18,29 +19,10 @@ interface Props {
   onNewOrder: () => void;
 }
 
-function handoffMessage(handoffState: Props["handoffState"]) {
-  if (handoffState === "sent") {
-    return {
-      tone: "muted",
-      text: "The order has been handed off to fulfillment.",
-    } as const;
-  }
-  if (handoffState === "failed") {
-    return {
-      tone: "warning",
-      text: "Your order was saved, but the fulfillment handoff needs manual attention. We can still recover it from the order system.",
-    } as const;
-  }
-  return {
-    tone: "muted",
-    text: "Final handoff is processing.",
-  } as const;
-}
-
 export default function CheckoutDone({ orderNumber, guestInfo, cart, handoffState, onNewOrder }: Props) {
   const { workflowSettings } = useAdmin();
   const shipTo = [guestInfo.city, guestInfo.state].filter(Boolean).join(", ");
-  const handoff = handoffMessage(handoffState);
+  const handoff = getCheckoutHandoffMessage(handoffState);
   const supportEmail = resolveSupportEmail(workflowSettings.supportEmail);
 
   return (

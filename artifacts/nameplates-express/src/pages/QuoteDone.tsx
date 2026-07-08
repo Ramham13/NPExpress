@@ -4,6 +4,7 @@
  */
 import { CheckCircle, ArrowRight, FileText } from "lucide-react";
 import { useAdmin } from "@/context/AdminContext";
+import { getQuoteHandoffMessage } from "@/lib/order-handoff-copy";
 import { resolveSupportEmail } from "@/lib/support-email";
 import type { GuestInfo } from "./CheckoutGuest";
 import type { CartItem } from "@/lib/plate-utils";
@@ -16,28 +17,9 @@ interface Props {
   onNewOrder: () => void;
 }
 
-function handoffMessage(handoffState: Props["handoffState"]) {
-  if (handoffState === "sent") {
-    return {
-      tone: "muted",
-      text: "The invoice handoff has been sent to operations.",
-    } as const;
-  }
-  if (handoffState === "failed") {
-    return {
-      tone: "warning",
-      text: "Your request was saved, but the operations handoff needs manual attention. We can still recover it from the order system.",
-    } as const;
-  }
-  return {
-    tone: "muted",
-    text: "Final handoff is processing.",
-  } as const;
-}
-
 export default function QuoteDone({ orderNumber, guestInfo, cart, handoffState, onNewOrder }: Props) {
   const { workflowSettings } = useAdmin();
-  const handoff = handoffMessage(handoffState);
+  const handoff = getQuoteHandoffMessage(handoffState);
   const supportEmail = resolveSupportEmail(workflowSettings.supportEmail);
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
