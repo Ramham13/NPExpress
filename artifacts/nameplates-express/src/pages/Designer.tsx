@@ -390,6 +390,7 @@ export default function Designer() {
   if (appView === "quote-confirmed") {
     return (
       <QuoteDone
+        orderNumber={orderNumber}
         guestInfo={guestInfo}
         cart={confirmedCart}
         handoffState={handoffState}

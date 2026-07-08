@@ -7,6 +7,7 @@ import type { GuestInfo } from "./CheckoutGuest";
 import type { CartItem } from "@/lib/plate-utils";
 
 interface Props {
+  orderNumber: string;
   guestInfo: GuestInfo;
   cart: CartItem[];
   handoffState: "idle" | "sending" | "sent" | "failed";
@@ -32,7 +33,7 @@ function handoffMessage(handoffState: Props["handoffState"]) {
   } as const;
 }
 
-export default function QuoteDone({ guestInfo, cart, handoffState, onNewOrder }: Props) {
+export default function QuoteDone({ orderNumber, guestInfo, cart, handoffState, onNewOrder }: Props) {
   const handoff = handoffMessage(handoffState);
   return (
     <div className="min-h-screen flex flex-col bg-[hsl(220_20%_6%)] text-slate-200">
@@ -55,6 +56,12 @@ export default function QuoteDone({ guestInfo, cart, handoffState, onNewOrder }:
             <p className={`mt-3 text-xs ${handoff.tone === "warning" ? "text-amber-400" : "text-slate-500"}`}>
               {handoff.text}
             </p>
+          </div>
+
+          <div className="rounded border border-slate-700 bg-slate-800/60 px-5 py-4 text-center">
+            <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">Order Reference</p>
+            <p className="text-2xl font-black tracking-widest text-blue-400">{orderNumber}</p>
+            <p className="mt-1 text-xs text-slate-500">Save this number for your records</p>
           </div>
 
           {/* Submission summary */}
